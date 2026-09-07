@@ -1,0 +1,130 @@
+<script>
+(function () {
+  "use strict";
+
+  var state = { code: null };
+
+  var el = {
+    loginWrapper: document.getElementById('loginWrapper'),
+    loginCode: document.getElementById('loginCode'),
+    loginError: document.getElementById('loginError'),
+    btnLogin: document.getElementById('btnLogin'),
+    dashboardMain: document.getElementById('dashboardMain'),
+
+    statTotalSekolah: document.getElementById('statTotalSekolah'),
+    statBelumMengisi: document.getElementById('statBelumMengisi'),
+    statSedangMengisi: document.getElementById('statSedangMengisi'),
+    statSiapSubmit: document.getElementById('statSiapSubmit'),
+    statSudahSubmit: document.getElementById('statSudahSubmit'),
+    statTotalSiswa: document.getElementById('statTotalSiswa'),
+    statSiswaMengisi: document.getElementById('statSiswaMengisi'),
+    statPersenMengisi: document.getElementById('statPersenMengisi'),
+    statPersenSubmit: document.getElementById('statPersenSubmit'),
+
+    filterKecamatan: document.getElementById('filterKecamatan'),
+    filterDesa: document.getElementById('filterDesa'),
+    filterJenjang: document.getElementById('filterJenjang'),
+    filterStatusSubmit: document.getElementById('filterStatusSubmit'),
+    tabelSekolahBody: document.getElementById('tabelSekolahBody')
+  };
+
+  el.btnLogin.addEventListener('click', doLogin);
+  el.loginCode.addEventListener('keydown', function (e) { if (e.key === 'Enter') doLogin(); });
+
+  function doLogin() {
+    var code = el.loginCode.value.trim();
+    el.loginError.classList.add('hidden');
+    if (!code) {
+      el.loginError.textContent = "Kode akses wajib diisi.";
+      el.loginError.classList.remove('hidden');
+      return;
+    }
+    dashCall('apiDinasLogin', code).then(function (res) {
+      if (!res.success) {
+        el.loginError.textContent = res.message;
+        el.loginError.classList.remove('hidden');
+        return;
+      }
+      state.code = code;
+      el.loginWrapper.classList.add('hidden');
+      el.dashboardMain.classList.remove('hidden');
+      loadDashboard();
+    });
+  }
+
+  [el.filterKecamatan, el.filterDesa, el.filterJenjang, el.filterStatusSubmit].forEach(function (f) {
+    f.addEventListener('change', loadDashboard);
+  });
+
+  function currentFilters() {
+    return {
+      kecamatan: el.filterKecamatan.value || null,
+      desa: el.filterDesa.value || null,
+      jenjang: el.filterJenjang.value || null,
+      statusSubmit: el.filterStatusSubmit.value || null
+    };
+  }
+
+  function loadDashboard() {
+    dashCall('apiGetDinasOverview', state.code, currentFilters()).then(function (res) {
+      if (!res.success) {
+        dashToast(res.message, 'error');
+        return;
+      }
+      renderRingkasan(res.ringkasan);
+      renderFilterOptions(res.filterOptions);
+      renderTabel(res.tabel);
+    });
+  }
+
+  function renderRingkasan(r) {
+    el.statTotalSekolah.textContent = r.totalSekolahTerdaftar;
+    el.statBelumMengisi.textContent = r.belumMengisi;
+    el.statSedangMengisi.textContent = r.sedangMengisi;
+    el.statSiapSubmit.textContent = r.siapSubmit;
+    el.statSudahSubmit.textContent = r.sudahSubmit;
+    el.statTotalSiswa.textContent = r.totalSiswa;
+    el.statSiswaMengisi.textContent = r.totalSiswaSudahMengisi;
+    el.statPersenMengisi.textContent = r.persenSekolahMengisi + '%';
+    el.statPersenSubmit.textContent = r.persenSekolahSubmit + '%';
+  }
+
+  function renderFilterOptions(opts) {
+    fillIfEmpty(el.filterKecamatan, opts.kecamatan, 'Semua Kecamatan');
+    fillIfEmpty(el.filterDesa, opts.desa, 'Semua Kelurahan/Desa');
+  }
+
+  function fillIfEmpty(selectEl, options, placeholder) {
+    if (selectEl.dataset.filled === '1') return;
+    var current = selectEl.value;
+    selectEl.innerHTML = '<option value="">' + placeholder + '</option>';
+    options.forEach(function (v) {
+      var opt = document.createElement('option');
+      opt.value = v; opt.textContent = v;
+      if (v === current) opt.selected = true;
+      selectEl.appendChild(opt);
+    });
+    selectEl.dataset.filled = '1';
+  }
+
+  function renderTabel(rows) {
+    if (rows.length === 0) {
+      el.tabelSekolahBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">Tidak ada sekolah yang cocok dengan filter.</td></tr>';
+      return;
+    }
+    el.tabelSekolahBody.innerHTML = rows.map(function (r) {
+      return '<tr>' +
+        '<td>' + dashEscapeHtml(r.namaSekolah) + '</td>' +
+        '<td>' + dashEscapeHtml(r.kecamatan) + '</td>' +
+        '<td>' + dashEscapeHtml(r.desa) + '</td>' +
+        '<td>' + dashEscapeHtml(r.bentukPendidikan) + '</td>' +
+        '<td>' + r.jumlahSiswa + '</td>' +
+        '<td>' + r.sudahMengisi + '</td>' +
+        '<td>' + r.belumMengisi + '</td>' +
+        '<td><span class="badge-status ' + dashBadgeClassForStatus(r.status) + '">' + r.status + '</span></td>' +
+      '</tr>';
+    }).join('');
+  }
+
+})();
+</script>

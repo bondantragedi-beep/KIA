@@ -1,0 +1,247 @@
+<script>
+(function () {
+  "use strict";
+
+  // RUNNING 3.7: "Lihat Dokumen" membuka file PDF gabungan lewat LINK GOOGLE
+  // DRIVE ASLI (bukan blob:/data: URI, bukan juga menyisipkan isi file ke
+  // HTML kita sendiri). Alurnya:
+  // 1. Saat tombol diklik, buka TAB KOSONG dulu secara SINKRON (masih dalam
+  //    konteks klik pengguna) supaya tidak diblokir popup blocker browser.
+  // 2. Panggil apiGetDokumenViewUrl() lewat google.script.run -- ini
+  //    memvalidasi kode akses Capil + status submit sekolah PENUH di
+  //    SERVER, lalu (kalau lolos) mengembalikan link Google Drive file
+  //    gabungan tsb (file ini sudah diset "siapa saja dengan link boleh
+  //    lihat" KHUSUS untuknya, lihat ensureLinkViewableForCapil di Drive.gs).
+  // 3. Arahkan tab yang sudah dibuka tadi ke link tsb.
+  //
+  // CATATAN: percobaan sebelumnya (redirect otomatis dari halaman ?page=
+  // viewdoc yang di-generate doGet) GAGAL karena Apps Script mem-sandbox
+  // HtmlOutput sedemikian rupa sehingga JavaScript di dalamnya tidak boleh
+  // memindahkan tab browser ke domain lain. Solusi ini menghindarinya sama
+  // sekali karena redirect dilakukan oleh JavaScript di halaman Dashboard
+  // Capil ITU SENDIRI (yang tidak kena batasan itu), bukan di halaman hasil
+  // doGet terpisah.
+
+  var state = { code: null };
+
+  var el = {
+    loginWrapper: document.getElementById('loginWrapper'),
+    loginCode: document.getElementById('loginCode'),
+    loginError: document.getElementById('loginError'),
+    btnLogin: document.getElementById('btnLogin'),
+    dashboardMain: document.getElementById('dashboardMain'),
+
+    statTotalSekolah: document.getElementById('statTotalSekolah'),
+    statTotalSiswa: document.getElementById('statTotalSiswa'),
+
+    filterKecamatan: document.getElementById('filterKecamatan'),
+    filterDesa: document.getElementById('filterDesa'),
+    filterSekolah: document.getElementById('filterSekolah'),
+    filterJenjang: document.getElementById('filterJenjang'),
+    filterKelasRombel: document.getElementById('filterKelasRombel'),
+    tabelSiswaBody: document.getElementById('tabelSiswaBody')
+  };
+
+  el.btnLogin.addEventListener('click', doLogin);
+  el.loginCode.addEventListener('keydown', function (e) { if (e.key === 'Enter') doLogin(); });
+
+  function doLogin() {
+    var code = el.loginCode.value.trim();
+    el.loginError.classList.add('hidden');
+    if (!code) {
+      el.loginError.textContent = "Kode akses wajib diisi.";
+      el.loginError.classList.remove('hidden');
+      return;
+    }
+    dashCall('apiCapilLogin', code).then(function (res) {
+      if (!res.success) {
+        el.loginError.textContent = res.message;
+        el.loginError.classList.remove('hidden');
+        return;
+      }
+      state.code = code;
+      el.loginWrapper.classList.add('hidden');
+      el.dashboardMain.classList.remove('hidden');
+      loadOverview();
+      loadTabel();
+    });
+  }
+
+  [el.filterKecamatan, el.filterDesa, el.filterSekolah, el.filterJenjang, el.filterKelasRombel].forEach(function (f) {
+    f.addEventListener('change', loadTabel);
+  });
+
+  function currentFilters() {
+    return {
+      kecamatan: el.filterKecamatan.value || null,
+      desa: el.filterDesa.value || null,
+      npsn: el.filterSekolah.value || null,
+      jenjang: el.filterJenjang.value || null,
+      kelasRombel: el.filterKelasRombel.value || null
+    };
+  }
+
+  function loadOverview() {
+    dashCall('apiGetCapilOverview', state.code).then(function (res) {
+      if (!res.success) { dashToast(res.message, 'error'); return; }
+      el.statTotalSekolah.textContent = res.ringkasan.totalSekolahSubmit;
+      el.statTotalSiswa.textContent = res.ringkasan.totalSiswa;
+    });
+  }
+
+  function loadTabel() {
+    dashCall('apiGetCapilSiswaList', state.code, currentFilters()).then(function (res) {
+      if (!res.success) { dashToast(res.message, 'error'); return; }
+      renderFilterOptions(res.filterOptions);
+      renderTabel(res.tabel);
+    });
+  }
+
+  function renderFilterOptions(opts) {
+    fillIfEmpty(el.filterKecamatan, opts.kecamatan, 'Semua Kecamatan');
+    fillIfEmpty(el.filterDesa, opts.desa, 'Semua Kelurahan/Desa');
+    fillIfEmpty(el.filterKelasRombel, opts.kelasRombel, 'Semua Kelas/Rombel');
+
+    if (el.filterSekolah.dataset.filled !== '1') {
+      var current = el.filterSekolah.value;
+      el.filterSekolah.innerHTML = '<option value="">Semua Sekolah</option>';
+      opts.sekolah.forEach(function (s) {
+        var opt = document.createElement('option');
+        opt.value = s.npsn; opt.textContent = s.namaSekolah;
+        if (s.npsn === current) opt.selected = true;
+        el.filterSekolah.appendChild(opt);
+      });
+      el.filterSekolah.dataset.filled = '1';
+    }
+  }
+
+  function fillIfEmpty(selectEl, options, placeholder) {
+    if (selectEl.dataset.filled === '1') return;
+    var current = selectEl.value;
+    selectEl.innerHTML = '<option value="">' + placeholder + '</option>';
+    options.forEach(function (v) {
+      var opt = document.createElement('option');
+      opt.value = v; opt.textContent = v;
+      if (v === current) opt.selected = true;
+      selectEl.appendChild(opt);
+    });
+    selectEl.dataset.filled = '1';
+  }
+
+  function renderTabel(rows) {
+    if (rows.length === 0) {
+      el.tabelSiswaBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">Belum ada data siswa dari sekolah yang sudah submit sesuai filter ini.</td></tr>';
+      return;
+    }
+    el.tabelSiswaBody.innerHTML = rows.map(function (s) {
+      return '<tr>' +
+        '<td>' + dashEscapeHtml(s.namaSekolah) + '</td>' +
+        '<td>' + dashEscapeHtml(s.kecamatan) + '</td>' +
+        '<td>' + dashEscapeHtml(s.desa) + '</td>' +
+        '<td>' + dashEscapeHtml(s.jenjang) + '</td>' +
+        '<td>' + dashEscapeHtml(s.kelasRombel) + '</td>' +
+        '<td>' + dashEscapeHtml(s.namaAnak) + '</td>' +
+        '<td>' + dashEscapeHtml(s.nik) + '</td>' +
+        '<td class="d-flex gap-1 flex-wrap">' +
+        '<button class="btn-link-doc" data-id="' + dashEscapeHtml(s.idPengajuan) + '">📄 Lihat/Unduh PDF</button>' +
+        '<button class="btn-link-foto" data-id="' + dashEscapeHtml(s.idPengajuan) + '" data-nama="' + dashEscapeHtml(s.namaAnak) + '">🖼️ Unduh Foto</button>' +
+        '</td>' +
+      '</tr>';
+    }).join('');
+
+    el.tabelSiswaBody.querySelectorAll('.btn-link-doc').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        bukaDokumenGabungan(btn.getAttribute('data-id'), btn);
+      });
+    });
+
+    el.tabelSiswaBody.querySelectorAll('.btn-link-foto').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        unduhFoto(btn.getAttribute('data-id'), btn.getAttribute('data-nama'), btn);
+      });
+    });
+  }
+
+  /**
+   * Mengunduh FOTO ANAK saja (bukan PDF gabungan) -- dibutuhkan Capil untuk
+   * dicetak/dimasukkan ke kartu fisik KIA. Foto berukuran kecil (1 file
+   * JPG/PNG), jadi cara base64 + data: URI (lewat apiGetDokumenFile, cara
+   * yang sudah lama dipakai & terbukti aman) cukup untuk ukuran sekecil ini
+   * -- TIDAK perlu link Drive terpisah seperti file PDF gabungan yang besar.
+   */
+  function unduhFoto(idPengajuan, namaAnak, btn) {
+    var originalText = btn.textContent;
+    btn.textContent = '⏳...';
+    btn.disabled = true;
+
+    dashCall('apiGetDokumenFile', 'capil', state.code, idPengajuan, 'foto').then(function (res) {
+      btn.textContent = originalText;
+      btn.disabled = false;
+
+      if (!res.success) {
+        dashToast(res.message, 'error');
+        return;
+      }
+
+      var dataUri = "data:" + res.mimeType + ";base64," + res.base64;
+      var a = document.createElement('a');
+      a.href = dataUri;
+      a.download = res.fileName || (dashEscapeHtml(namaAnak) + '_Foto.jpg');
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }).catch(function (err) {
+      btn.textContent = originalText;
+      btn.disabled = false;
+      dashToast('Gagal mengunduh foto: ' + String(err), 'error');
+    });
+  }
+
+  /**
+   * Membuka file PDF gabungan di tab baru. Tab kosong dibuka DULU secara
+   * sinkron (di dalam event klik) supaya browser tidak menganggapnya popup
+   * liar, baru KEMUDIAN diarahkan ke link Drive setelah server memvalidasi
+   * akses. Kalau ternyata popup tetap diblokir (jarang), sediakan fallback
+   * link manual di dalam tabel.
+   */
+  function bukaDokumenGabungan(idPengajuan, btn) {
+    var tabBaru = window.open('about:blank', '_blank');
+    if (tabBaru) {
+      try {
+        tabBaru.document.write(
+          '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Memuat dokumen...</title></head>' +
+          '<body style="font-family:sans-serif;padding:24px;color:#1e293b;">⏳ Memuat dokumen, mohon tunggu sebentar...</body></html>'
+        );
+      } catch (e) { /* abaikan jika browser membatasi document.write */ }
+    }
+
+    var originalText = btn.textContent;
+    btn.textContent = '⏳ Memuat...';
+    btn.disabled = true;
+
+    dashCall('apiGetDokumenViewUrl', 'capil', state.code, idPengajuan, 'gabungan').then(function (res) {
+      btn.textContent = originalText;
+      btn.disabled = false;
+
+      if (!res.success) {
+        if (tabBaru && !tabBaru.closed) tabBaru.close();
+        dashToast(res.message, 'error');
+        return;
+      }
+
+      if (tabBaru && !tabBaru.closed) {
+        tabBaru.location.href = res.url;
+      } else {
+        // Popup diblokir sepenuhnya (jarang terjadi) -> pindah di tab saat ini sebagai fallback.
+        window.open(res.url, '_blank') || (window.location.href = res.url);
+      }
+    }).catch(function (err) {
+      btn.textContent = originalText;
+      btn.disabled = false;
+      if (tabBaru && !tabBaru.closed) tabBaru.close();
+      dashToast('Gagal memuat dokumen: ' + String(err), 'error');
+    });
+  }
+
+})();
+</script>

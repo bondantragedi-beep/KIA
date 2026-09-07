@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <?!= include('CSS'); ?>
+</head>
+<body class="dash-body">
+
+  <header class="app-header">
+    <?!= include('LogoScript'); ?>
+    <div class="app-header-text">
+      <h1>Dashboard Capil</h1>
+      <p>Pendataan &amp; Pengajuan KIA &mdash; Kota Makassar</p>
+      <span class="role-tag">CAPIL</span>
+    </div>
+  </header>
+
+  <!-- LOGIN -->
+  <div class="login-wrapper" id="loginWrapper">
+    <div class="login-card">
+      <h3>Masuk sebagai Capil</h3>
+      <p class="subtitle">Masukkan kode akses Capil. Hanya data sekolah yang <strong>SUDAH SUBMIT</strong> yang akan ditampilkan.</p>
+      <div class="mb-2">
+        <input type="password" class="form-control" id="loginCode" placeholder="Kode akses Capil">
+      </div>
+      <div id="loginError" class="alert alert-danger hidden" style="font-size:0.85rem;"></div>
+      <button class="btn btn-kia-primary w-100" id="btnLogin" type="button">Masuk</button>
+      <div class="dash-login-link">Bukan Capil? <a href="?page=ortu">Form Orang Tua</a> &middot; <a href="?page=sekolah">Sekolah</a> &middot; <a href="?page=dinas">Dinas</a></div>
+    </div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <main class="dash-main hidden" id="dashboardMain">
+
+    <div class="stat-grid">
+      <div class="stat-card"><div class="stat-label">Sekolah Sudah Submit</div><div class="stat-value text-blue" id="statTotalSekolah">0</div></div>
+      <div class="stat-card"><div class="stat-label">Total Siswa Tersedia</div><div class="stat-value text-blue" id="statTotalSiswa">0</div></div>
+    </div>
+
+    <div class="dash-panel">
+      <h5>Rekap Data Siswa (Sekolah Sudah Submit)</h5>
+      <div class="filter-bar">
+        <select class="form-select form-select-sm" style="max-width:200px;" id="filterKecamatan"><option value="">Semua Kecamatan</option></select>
+        <select class="form-select form-select-sm" style="max-width:200px;" id="filterDesa"><option value="">Semua Kelurahan/Desa</option></select>
+        <select class="form-select form-select-sm" style="max-width:240px;" id="filterSekolah"><option value="">Semua Sekolah</option></select>
+        <select class="form-select form-select-sm" style="max-width:140px;" id="filterJenjang">
+          <option value="">Semua Jenjang</option>
+          <option value="TPA">TPA</option>
+          <option value="KB">KB</option>
+          <option value="TK">TK</option>
+          <option value="SD">SD</option>
+          <option value="SMP">SMP</option>
+        </select>
+        <select class="form-select form-select-sm" style="max-width:160px;" id="filterKelasRombel"><option value="">Semua Kelas/Rombel</option></select>
+      </div>
+      <div class="dash-table-wrapper">
+        <table class="dash-table">
+          <thead>
+            <tr>
+              <th>Nama Sekolah</th><th>Kecamatan</th><th>Desa</th><th>Jenjang</th><th>Kelas/Rombel</th>
+              <th>Nama Anak</th><th>NIK</th><th>Dokumen</th>
+            </tr>
+          </thead>
+          <tbody id="tabelSiswaBody">
+            <tr><td colspan="8" class="text-center text-muted py-3">Memuat data...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+
+  <?!= include('DashboardCommon'); ?>
+  <?!= include('CapilJS'); ?>
+</body>
+</html>

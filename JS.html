@@ -1,0 +1,758 @@
+<script>
+(function () {
+  "use strict";
+
+  // ==================================================
+  // DATA JENJANG -> KELAS -> ROMBEL
+  // ==================================================
+  // CATATAN: "Jenjang" TIDAK LAGI dipilih manual oleh orang tua. Sejak NPSN
+  // divalidasi, jenjang sudah otomatis mengikuti kolom "Bentuk Pendidikan"
+  // pada sheet `db` (mis. TPA, KB, TK, SD, SMP) — lihat normalizeJenjang().
+  // Asumsi struktur Kelas/Rombel untuk TPA & KB (belum ditentukan sebelumnya
+  // dalam spesifikasi) dibuat sama polanya dengan TK ("A"/"B"); beri tahu
+  // saya jika penamaan rombel TPA/KB di lapangan berbeda.
+  var STRUKTUR_KELAS = {
+    "TPA": {
+      "TPA A": ["TPA A"],
+      "TPA B": ["TPA B"]
+    },
+    "KB": {
+      "KB A": ["KB A"],
+      "KB B": ["KB B"]
+    },
+    "TK": {
+      "TK A": ["TK A"],
+      "TK B": ["TK B"]
+    },
+    "SD": {
+      "Kelas 1": ["1A", "1B", "1C"],
+      "Kelas 2": ["2A", "2B", "2C"],
+      "Kelas 3": ["3A", "3B", "3C"],
+      "Kelas 4": ["4A", "4B", "4C"],
+      "Kelas 5": ["5A", "5B", "5C"],
+      "Kelas 6": ["6A", "6B", "6C"]
+    },
+    "SMP": {
+      "Kelas 7": ["7A", "7B", "7C", "7D", "7E"],
+      "Kelas 8": ["8A", "8B", "8C", "8D", "8E"],
+      "Kelas 9": ["9A", "9B", "9C", "9D", "9E"]
+    }
+  };
+
+  /**
+   * Mengubah nilai "Bentuk Pendidikan" dari sheet `db` (boleh ada spasi/beda
+   * huruf besar-kecil) menjadi kunci jenjang baku yang dikenali STRUKTUR_KELAS.
+   * Mengembalikan null jika tidak dikenali (sekolah dengan Bentuk Pendidikan
+   * di luar TPA/KB/TK/SD/SMP) — form akan menampilkan pesan agar hubungi admin.
+   */
+  function normalizeJenjang(bentukPendidikan) {
+    var key = String(bentukPendidikan || "").trim().toUpperCase();
+    return STRUKTUR_KELAS.hasOwnProperty(key) ? key : null;
+  }
+
+  var state = {
+    sekolah: null,
+    jenjang: null // ditentukan otomatis dari Bentuk Pendidikan sekolah, bukan pilihan manual
+  };
+
+  // ==================================================
+  // ELEMENTS
+  // ==================================================
+  var el = {
+    inputNpsn: document.getElementById('inputNpsn'),
+    btnCariNpsn: document.getElementById('btnCariNpsn'),
+    npsnError: document.getElementById('npsnError'),
+    schoolInfoBox: document.getElementById('schoolInfoBox'),
+    sekolahLockedBox: document.getElementById('sekolahLockedBox'),
+    infoNamaSekolah: document.getElementById('infoNamaSekolah'),
+    infoBentukPendidikan: document.getElementById('infoBentukPendidikan'),
+    infoKecamatan: document.getElementById('infoKecamatan'),
+    infoDesa: document.getElementById('infoDesa'),
+
+    cardJenjang: document.getElementById('cardJenjang'),
+    jenjangOtomatisLabel: document.getElementById('jenjangOtomatisLabel'),
+    jenjangTidakDikenalBox: document.getElementById('jenjangTidakDikenalBox'),
+    selectTingkat: document.getElementById('selectTingkat'),
+    selectRombel: document.getElementById('selectRombel'),
+
+    cardSiswa: document.getElementById('cardSiswa'),
+    formSiswa: document.getElementById('formSiswa'),
+    btnSimpan: document.getElementById('btnSimpan'),
+    simpanError: document.getElementById('simpanError'),
+
+    cardSukses: document.getElementById('cardSukses'),
+    hasilIdPengajuan: document.getElementById('hasilIdPengajuan'),
+    hasilStatus: document.getElementById('hasilStatus'),
+    btnTambahLagi: document.getElementById('btnTambahLagi'),
+    btnUnduhFormulir: document.getElementById('btnUnduhFormulir'),
+
+    // RUNNING 2
+    cardDataTersimpan: document.getElementById('cardDataTersimpan'),
+    dataTersimpanId: document.getElementById('dataTersimpanId'),
+
+    cardFoto: document.getElementById('cardFoto'),
+    inputFoto: document.getElementById('inputFoto'),
+    previewFoto: document.getElementById('previewFoto'),
+    errFoto: document.getElementById('errFoto'),
+
+    cardTtd: document.getElementById('cardTtd'),
+    signatureCanvas: document.getElementById('signatureCanvas'),
+    btnUndoTtd: document.getElementById('btnUndoTtd'),
+    btnClearTtd: document.getElementById('btnClearTtd'),
+    previewTtd: document.getElementById('previewTtd'),
+    previewTtdEmpty: document.getElementById('previewTtdEmpty'),
+    errTtd: document.getElementById('errTtd'),
+
+    cardDokumen: document.getElementById('cardDokumen'),
+    inputAkta: document.getElementById('inputAkta'),
+    inputKK: document.getElementById('inputKK'),
+    inputKTP: document.getElementById('inputKTP'),
+    errAkta: document.getElementById('errAkta'),
+    errKK: document.getElementById('errKK'),
+    errKTP: document.getElementById('errKTP'),
+    btnSubmitBerkas: document.getElementById('btnSubmitBerkas'),
+    berkasError: document.getElementById('berkasError')
+  };
+
+  // State tambahan RUNNING 2
+  state.idPengajuan = null;
+  state.formulirBase64 = null;
+  state.formulirFileName = null;
+
+  // ==================================================
+  // STEP 1: CARI NPSN
+  // ==================================================
+  el.btnCariNpsn.addEventListener('click', function () {
+    var npsn = el.inputNpsn.value.trim();
+    hideError(el.npsnError);
+    el.schoolInfoBox.classList.add('hidden');
+    el.sekolahLockedBox.classList.add('hidden');
+    el.cardJenjang.classList.add('hidden');
+    el.cardSiswa.classList.add('hidden');
+    el.jenjangTidakDikenalBox.classList.add('hidden');
+    state.sekolah = null;
+    state.jenjang = null;
+
+    if (!/^\d{6,10}$/.test(npsn)) {
+      showError(el.npsnError, "Format NPSN tidak valid. Masukkan angka NPSN yang benar.");
+      return;
+    }
+
+    setLoading(el.btnCariNpsn, true, "Mencari...");
+
+    google.script.run
+      .withSuccessHandler(function (res) {
+        setLoading(el.btnCariNpsn, false, "Cari");
+        if (!res.found) {
+          showError(el.npsnError, res.message || "NPSN tidak ditemukan.");
+          return;
+        }
+        state.sekolah = res.data;
+        renderSchoolInfo(res.data);
+
+        // RUNNING 3: jika sekolah sudah SUDAH SUBMIT, tampilkan info & JANGAN
+        // lanjut ke pilihan jenjang/kelas (data sudah dikunci di server).
+        if (res.sudahSubmit) {
+          el.sekolahLockedBox.classList.remove('hidden');
+          el.cardJenjang.classList.add('hidden');
+          return;
+        }
+
+        // Jenjang TIDAK dipilih manual — otomatis mengikuti Bentuk Pendidikan
+        // sekolah (sudah tervalidasi lewat NPSN), sesuai data pada sheet `db`.
+        var jenjang = normalizeJenjang(res.data.bentukPendidikan);
+        state.jenjang = jenjang;
+
+        if (!jenjang) {
+          el.jenjangTidakDikenalBox.classList.remove('hidden');
+          el.jenjangOtomatisLabel.parentElement.classList.add('hidden');
+          el.cardJenjang.classList.remove('hidden');
+          resetKelasRombel();
+          return;
+        }
+
+        el.jenjangTidakDikenalBox.classList.add('hidden');
+        el.jenjangOtomatisLabel.parentElement.classList.remove('hidden');
+        el.jenjangOtomatisLabel.textContent = jenjang;
+        el.cardJenjang.classList.remove('hidden');
+        resetKelasRombel();
+        isiKelasSesuaiJenjang(jenjang);
+      })
+      .withFailureHandler(function (err) {
+        setLoading(el.btnCariNpsn, false, "Cari");
+        showError(el.npsnError, "Gagal menghubungi server: " + err.message);
+      })
+      .apiCariSekolah(npsn);
+  });
+
+  function renderSchoolInfo(data) {
+    el.infoNamaSekolah.textContent = data.namaSekolah;
+    el.infoBentukPendidikan.textContent = data.bentukPendidikan;
+    el.infoKecamatan.textContent = data.kecamatan;
+    el.infoDesa.textContent = data.desa;
+    el.schoolInfoBox.classList.remove('hidden');
+  }
+
+  // ==================================================
+  // STEP 2: KELAS -> ROMBEL (DINAMIS, JENJANG OTOMATIS)
+  // ==================================================
+  function isiKelasSesuaiJenjang(jenjang) {
+    var kelasList = Object.keys(STRUKTUR_KELAS[jenjang]);
+    fillSelect(el.selectTingkat, kelasList, "-- Pilih Kelas --");
+    el.selectTingkat.disabled = false;
+  }
+
+  el.selectTingkat.addEventListener('change', function () {
+    var jenjang = state.jenjang;
+    var kelas = el.selectTingkat.value;
+    fillSelect(el.selectRombel, [], "-- Pilih Rombel --");
+    el.selectRombel.disabled = true;
+
+    if (jenjang && kelas) {
+      var rombelList = STRUKTUR_KELAS[jenjang][kelas];
+      fillSelect(el.selectRombel, rombelList, "-- Pilih Rombel --");
+      el.selectRombel.disabled = false;
+    }
+    updateFormVisibility();
+  });
+
+  el.selectRombel.addEventListener('change', updateFormVisibility);
+
+  function resetKelasRombel() {
+    fillSelect(el.selectTingkat, [], "-- Pilih Kelas --");
+    el.selectTingkat.disabled = true;
+    fillSelect(el.selectRombel, [], "-- Pilih Kelas Terlebih Dahulu --");
+    el.selectRombel.disabled = true;
+    el.cardSiswa.classList.add('hidden');
+  }
+
+  function fillSelect(selectEl, options, placeholder) {
+    selectEl.innerHTML = "";
+    var opt0 = document.createElement('option');
+    opt0.value = "";
+    opt0.textContent = placeholder;
+    selectEl.appendChild(opt0);
+    options.forEach(function (val) {
+      var opt = document.createElement('option');
+      opt.value = val;
+      opt.textContent = val;
+      selectEl.appendChild(opt);
+    });
+  }
+
+  function updateFormVisibility() {
+    if (state.jenjang && el.selectTingkat.value && el.selectRombel.value) {
+      el.cardSiswa.classList.remove('hidden');
+    } else {
+      el.cardSiswa.classList.add('hidden');
+    }
+  }
+
+  // ==================================================
+  // STEP 3: VALIDASI & SIMPAN DATA SISWA
+  // ==================================================
+  var fieldRules = [
+    { id: 'namaAnak', required: true },
+    { id: 'nik', required: true, pattern: /^\d{16}$/ },
+    { id: 'tempatLahir', required: true },
+    { id: 'tanggalLahir', required: true },
+    { id: 'alamatTinggal', required: true },
+    { id: 'namaKepalaKeluarga', required: true },
+    { id: 'nomorKK', required: true, pattern: /^\d{16}$/ },
+    { id: 'namaAyah', required: true },
+    { id: 'namaIbu', required: true },
+    { id: 'namaPelapor', required: true },
+    { id: 'nomorHpPelapor', required: true }
+  ];
+
+  el.formSiswa.addEventListener('submit', function (e) {
+    e.preventDefault();
+    hideError(el.simpanError);
+
+    if (!state.sekolah) {
+      showError(el.simpanError, "Data sekolah belum divalidasi.");
+      return;
+    }
+    if (!state.jenjang) {
+      showError(el.simpanError, "Jenjang sekolah ini tidak dikenali sistem. Hubungi admin sebelum melanjutkan.");
+      return;
+    }
+
+    var valid = validateForm();
+    var jkChecked = document.querySelector('input[name="jenisKelamin"]:checked');
+    if (!jkChecked) {
+      document.getElementById('errJenisKelamin').classList.add('show');
+      valid = false;
+    } else {
+      document.getElementById('errJenisKelamin').classList.remove('show');
+    }
+
+    if (!valid) return;
+
+    var payload = {
+      npsn: state.sekolah.npsn,
+      jenjang: state.jenjang,
+      kelasRombel: el.selectRombel.value,
+      namaAnak: val('namaAnak'),
+      nomorAkta: val('nomorAkta'),
+      nik: val('nik'),
+      tempatLahir: val('tempatLahir'),
+      tanggalLahir: val('tanggalLahir'),
+      jenisKelamin: jkChecked.value,
+      alamatTinggal: val('alamatTinggal'),
+      namaKepalaKeluarga: val('namaKepalaKeluarga'),
+      nomorKK: val('nomorKK'),
+      namaAyah: val('namaAyah'),
+      namaIbu: val('namaIbu'),
+      namaPelapor: val('namaPelapor'),
+      nomorHpPelapor: val('nomorHpPelapor')
+    };
+
+    setLoading(el.btnSimpan, true, "Menyimpan...");
+
+    google.script.run
+      .withSuccessHandler(function (res) {
+        setLoading(el.btnSimpan, false, "Simpan Data Siswa");
+        if (!res.success) {
+          showError(el.simpanError, (res.errors || ["Gagal menyimpan data."]).join(" "));
+          return;
+        }
+        goToBerkasStep(res);
+      })
+      .withFailureHandler(function (err) {
+        setLoading(el.btnSimpan, false, "Simpan Data Siswa");
+        showError(el.simpanError, "Gagal menghubungi server: " + err.message);
+      })
+      .apiSimpanSiswa(payload);
+  });
+
+  function validateForm() {
+    var allValid = true;
+    fieldRules.forEach(function (rule) {
+      var input = document.getElementById(rule.id);
+      var value = input.value.trim();
+      var isValid = true;
+
+      if (rule.required && value === "") isValid = false;
+      if (isValid && rule.pattern && !rule.pattern.test(value)) isValid = false;
+
+      toggleFieldError(input, !isValid);
+      if (!isValid) allValid = false;
+    });
+    return allValid;
+  }
+
+  function toggleFieldError(input, hasError) {
+    var errorDiv = input.parentElement.querySelector('.field-error');
+    if (hasError) {
+      input.classList.add('is-invalid');
+      if (errorDiv) errorDiv.classList.add('show');
+    } else {
+      input.classList.remove('is-invalid');
+      if (errorDiv) errorDiv.classList.remove('show');
+    }
+  }
+
+  // Live-clear error saat user mengetik
+  fieldRules.forEach(function (rule) {
+    document.getElementById(rule.id).addEventListener('input', function () {
+      toggleFieldError(this, false);
+    });
+  });
+
+  function val(id) {
+    return document.getElementById(id).value.trim();
+  }
+
+  /**
+   * Dipanggil setelah data siswa (Langkah 3) berhasil disimpan.
+   * Menyembunyikan form data siswa, menampilkan konfirmasi singkat,
+   * lalu membuka Langkah 4-6 (Foto, Tanda Tangan, Dokumen).
+   */
+  function goToBerkasStep(res) {
+    state.idPengajuan = res.idPengajuan;
+
+    el.dataTersimpanId.textContent = res.idPengajuan;
+    el.cardDataTersimpan.classList.remove('hidden');
+
+    el.cardJenjang.classList.add('hidden');
+    el.cardSiswa.classList.add('hidden');
+
+    el.cardFoto.classList.remove('hidden');
+    el.cardTtd.classList.remove('hidden');
+    el.cardDokumen.classList.remove('hidden');
+
+    initSignaturePad(); // pastikan canvas siap ukurannya setelah tampil (bukan hidden lagi)
+  }
+
+  function showFinalSuccess(res) {
+    el.hasilIdPengajuan.textContent = res.idPengajuan;
+    el.hasilStatus.textContent = res.statusSiswa;
+    el.hasilStatus.className = "status-pill " + (res.statusSiswa === "LENGKAP" ? "lengkap" : "belum");
+
+    state.formulirBase64 = res.formulirBase64;
+    state.formulirFileName = res.formulirFileName;
+
+    document.getElementById('cardNpsn').classList.add('hidden');
+    el.cardDataTersimpan.classList.add('hidden');
+    el.cardFoto.classList.add('hidden');
+    el.cardTtd.classList.add('hidden');
+    el.cardDokumen.classList.add('hidden');
+    el.cardSukses.classList.remove('hidden');
+  }
+
+  el.btnUnduhFormulir.addEventListener('click', function () {
+    if (!state.formulirBase64) return;
+    downloadBase64AsFile(state.formulirBase64, state.formulirFileName || "FormulirKIA.pdf", "application/pdf");
+  });
+
+  el.btnTambahLagi.addEventListener('click', function () {
+    el.formSiswa.reset();
+    fieldRules.forEach(function (rule) {
+      toggleFieldError(document.getElementById(rule.id), false);
+    });
+    document.getElementById('errJenisKelamin').classList.remove('show');
+
+    // Reset berkas RUNNING 2
+    resetBerkasState();
+
+    el.cardSukses.classList.add('hidden');
+    document.getElementById('cardNpsn').classList.remove('hidden');
+    el.inputNpsn.value = "";
+    el.schoolInfoBox.classList.add('hidden');
+    el.jenjangTidakDikenalBox.classList.add('hidden');
+    resetKelasRombel();
+    state.sekolah = null;
+    state.jenjang = null;
+    state.idPengajuan = null;
+  });
+
+  // ==================================================
+  // RUNNING 2 — FOTO ANAK
+  // ==================================================
+  var fotoData = null; // { base64, mimeType, filename }
+
+  el.inputFoto.addEventListener('change', function () {
+    hideError(el.errFoto);
+    var file = this.files[0];
+    if (!file) {
+      fotoData = null;
+      el.previewFoto.classList.add('hidden');
+      return;
+    }
+
+    var ext = getExt(file.name);
+    if (['jpg', 'jpeg', 'png'].indexOf(ext) === -1) {
+      showError(el.errFoto, "Format foto harus JPG, JPEG, atau PNG.");
+      this.value = "";
+      fotoData = null;
+      return;
+    }
+    if (file.size > 1 * 1024 * 1024) {
+      showError(el.errFoto, "Ukuran foto maksimal 1 MB.");
+      this.value = "";
+      fotoData = null;
+      return;
+    }
+
+    readFileAsBase64(file).then(function (base64) {
+      fotoData = { base64: base64, mimeType: file.type, filename: file.name };
+      el.previewFoto.src = "data:" + file.type + ";base64," + base64;
+      el.previewFoto.classList.remove('hidden');
+    });
+  });
+
+  // ==================================================
+  // RUNNING 2 — TANDA TANGAN (CANVAS)
+  // ==================================================
+  var ctx = null;
+  var isDrawing = false;
+  var strokes = [];      // riwayat goresan untuk fitur "Ulangi" (undo)
+  var currentStroke = [];
+  var canvasReady = false;
+
+  function initSignaturePad() {
+    if (canvasReady) {
+      redrawCanvas();
+      return;
+    }
+    var canvas = el.signatureCanvas;
+
+    // Samakan resolusi internal canvas dengan ukuran tampilnya agar goresan presisi
+    var ratio = window.devicePixelRatio || 1;
+    var rect = canvas.getBoundingClientRect();
+    canvas.width = (rect.width || 600) * ratio;
+    canvas.height = 220 * ratio;
+    ctx = canvas.getContext('2d');
+    ctx.scale(ratio, ratio);
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#1e293b';
+
+    canvas.addEventListener('mousedown', startDraw);
+    canvas.addEventListener('mousemove', moveDraw);
+    window.addEventListener('mouseup', endDraw);
+
+    canvas.addEventListener('touchstart', function (e) { e.preventDefault(); startDraw(getTouchPos(e)); }, { passive: false });
+    canvas.addEventListener('touchmove', function (e) { e.preventDefault(); moveDraw(getTouchPos(e)); }, { passive: false });
+    canvas.addEventListener('touchend', function (e) { e.preventDefault(); endDraw(); }, { passive: false });
+
+    canvasReady = true;
+  }
+
+  function getCanvasPos(e) {
+    var rect = el.signatureCanvas.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+  function getTouchPos(e) {
+    var t = e.touches[0] || e.changedTouches[0];
+    var rect = el.signatureCanvas.getBoundingClientRect();
+    return { x: t.clientX - rect.left, y: t.clientY - rect.top };
+  }
+
+  function startDraw(eOrPos) {
+    isDrawing = true;
+    var pos = eOrPos.clientX !== undefined ? getCanvasPos(eOrPos) : eOrPos;
+    currentStroke = [pos];
+    ctx.beginPath();
+    ctx.moveTo(pos.x, pos.y);
+    hideError(el.errTtd);
+  }
+  function moveDraw(eOrPos) {
+    if (!isDrawing) return;
+    var pos = eOrPos.clientX !== undefined ? getCanvasPos(eOrPos) : eOrPos;
+    currentStroke.push(pos);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.stroke();
+  }
+  function endDraw() {
+    if (!isDrawing) return;
+    isDrawing = false;
+    if (currentStroke.length > 1) {
+      strokes.push(currentStroke);
+      updateTtdPreview();
+    }
+    currentStroke = [];
+  }
+
+  function redrawCanvas() {
+    var canvas = el.signatureCanvas;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    strokes.forEach(function (stroke) {
+      ctx.beginPath();
+      stroke.forEach(function (pos, i) {
+        if (i === 0) ctx.moveTo(pos.x, pos.y);
+        else ctx.lineTo(pos.x, pos.y);
+      });
+      ctx.stroke();
+    });
+  }
+
+  el.btnUndoTtd.addEventListener('click', function () {
+    strokes.pop();
+    redrawCanvas();
+    updateTtdPreview();
+  });
+
+  el.btnClearTtd.addEventListener('click', function () {
+    strokes = [];
+    redrawCanvas();
+    updateTtdPreview();
+  });
+
+  function updateTtdPreview() {
+    if (strokes.length === 0) {
+      el.previewTtd.classList.add('hidden');
+      el.previewTtdEmpty.classList.remove('hidden');
+      return;
+    }
+    var dataUrl = el.signatureCanvas.toDataURL('image/png'); // PNG transparan (background tidak digambar)
+    el.previewTtd.src = dataUrl;
+    el.previewTtd.classList.remove('hidden');
+    el.previewTtdEmpty.classList.add('hidden');
+  }
+
+  function getSignatureBase64() {
+    if (strokes.length === 0) return null;
+    var dataUrl = el.signatureCanvas.toDataURL('image/png');
+    return dataUrl.split(',')[1];
+  }
+
+  // ==================================================
+  // RUNNING 2 — UPLOAD DOKUMEN (AKTA, KK, KTP)
+  // ==================================================
+  var dokumenData = { akta: null, kk: null, ktp: null };
+
+  setupDocInput(el.inputAkta, el.errAkta, 'akta');
+  setupDocInput(el.inputKK, el.errKK, 'kk');
+  setupDocInput(el.inputKTP, el.errKTP, 'ktp');
+
+  function setupDocInput(inputEl, errEl, key) {
+    inputEl.addEventListener('change', function () {
+      hideError(errEl);
+      var file = this.files[0];
+      if (!file) {
+        dokumenData[key] = null;
+        return;
+      }
+
+      var ext = getExt(file.name);
+      if (['pdf', 'jpg', 'jpeg', 'png'].indexOf(ext) === -1) {
+        showError(errEl, "Format harus PDF, JPG, JPEG, atau PNG.");
+        this.value = "";
+        dokumenData[key] = null;
+        return;
+      }
+      if (file.size > 2 * 1024 * 1024) {
+        showError(errEl, "Ukuran file maksimal 2 MB.");
+        this.value = "";
+        dokumenData[key] = null;
+        return;
+      }
+
+      readFileAsBase64(file).then(function (base64) {
+        dokumenData[key] = { base64: base64, mimeType: file.type, filename: file.name };
+      });
+    });
+  }
+
+  // ==================================================
+  // RUNNING 2 — SUBMIT BERKAS
+  // ==================================================
+  el.btnSubmitBerkas.addEventListener('click', function () {
+    hideError(el.berkasError);
+
+    if (!state.idPengajuan) {
+      showError(el.berkasError, "Data siswa belum tersimpan. Ulangi dari Langkah 3.");
+      return;
+    }
+
+    var valid = true;
+
+    if (!fotoData) {
+      showError(el.errFoto, "Foto anak wajib diunggah dengan format & ukuran yang sesuai.");
+      valid = false;
+    }
+
+    var ttdBase64 = getSignatureBase64();
+    if (!ttdBase64) {
+      showError(el.errTtd, "Tanda tangan wajib diisi.");
+      valid = false;
+    }
+
+    if (!dokumenData.akta) { showError(el.errAkta, "Akta Kelahiran wajib diunggah."); valid = false; }
+    if (!dokumenData.kk) { showError(el.errKK, "Kartu Keluarga wajib diunggah."); valid = false; }
+    if (!dokumenData.ktp) { showError(el.errKTP, "KTP Orang Tua wajib diunggah."); valid = false; }
+
+    if (!valid) {
+      showError(el.berkasError, "Lengkapi seluruh berkas yang wajib diunggah di atas.");
+      return;
+    }
+
+    var payload = {
+      idPengajuan: state.idPengajuan,
+      foto: fotoData,
+      tandaTangan: { base64: ttdBase64 },
+      akta: dokumenData.akta,
+      kk: dokumenData.kk,
+      ktp: dokumenData.ktp
+    };
+
+    setLoading(el.btnSubmitBerkas, true, "Mengunggah & membuat formulir...");
+
+    google.script.run
+      .withSuccessHandler(function (res) {
+        setLoading(el.btnSubmitBerkas, false, "Kirim Berkas & Buat Formulir KIA");
+        if (!res.success) {
+          showError(el.berkasError, (res.errors || ["Gagal mengunggah berkas."]).join(" "));
+          return;
+        }
+        showFinalSuccess(res);
+      })
+      .withFailureHandler(function (err) {
+        setLoading(el.btnSubmitBerkas, false, "Kirim Berkas & Buat Formulir KIA");
+        showError(el.berkasError, "Gagal menghubungi server: " + err.message);
+      })
+      .apiUploadBerkas(payload);
+  });
+
+  function resetBerkasState() {
+    fotoData = null;
+    dokumenData = { akta: null, kk: null, ktp: null };
+    strokes = [];
+    if (ctx) redrawCanvas();
+    updateTtdPreview();
+
+    el.inputFoto.value = "";
+    el.previewFoto.classList.add('hidden');
+    el.inputAkta.value = "";
+    el.inputKK.value = "";
+    el.inputKTP.value = "";
+
+    [el.errFoto, el.errTtd, el.errAkta, el.errKK, el.errKTP, el.berkasError].forEach(hideError);
+
+    el.cardDataTersimpan.classList.add('hidden');
+    el.cardFoto.classList.add('hidden');
+    el.cardTtd.classList.add('hidden');
+    el.cardDokumen.classList.add('hidden');
+
+    state.formulirBase64 = null;
+    state.formulirFileName = null;
+  }
+
+  // ==================================================
+  // HELPERS FILE & DOWNLOAD (RUNNING 2)
+  // ==================================================
+  function getExt(filename) {
+    var parts = String(filename || "").split(".");
+    return parts.length > 1 ? parts.pop().toLowerCase() : "";
+  }
+
+  function readFileAsBase64(file) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () {
+        // Buang prefix "data:mime;base64," agar hanya string base64 murni yang dikirim
+        resolve(reader.result.split(',')[1]);
+      };
+      reader.onerror = function () { reject(reader.error); };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function downloadBase64AsFile(base64, filename, mimeType) {
+    var byteChars = atob(base64);
+    var byteNumbers = new Array(byteChars.length);
+    for (var i = 0; i < byteChars.length; i++) {
+      byteNumbers[i] = byteChars.charCodeAt(i);
+    }
+    var byteArray = new Uint8Array(byteNumbers);
+    var blob = new Blob([byteArray], { type: mimeType });
+
+    var link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+  }
+
+  // ==================================================
+  // HELPERS UMUM
+  // ==================================================
+  function showError(elm, msg) {
+    elm.textContent = msg;
+    elm.classList.remove('hidden');
+  }
+  function hideError(elm) {
+    elm.classList.add('hidden');
+  }
+  function setLoading(button, isLoading, label) {
+    button.disabled = isLoading;
+    button.textContent = label;
+  }
+
+})();
+</script>

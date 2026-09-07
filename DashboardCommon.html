@@ -1,0 +1,121 @@
+<!--
+  DashboardCommon.html
+  Komponen & helper JS yang dipakai bersama oleh Sekolah.html, Dinas.html,
+  dan Capil.html: toast notifikasi, loading overlay, dan modal generik
+  (dipakai untuk konfirmasi submit maupun preview dokumen).
+-->
+<div class="loading-overlay-dash hidden" id="dashLoadingOverlay">
+  <div class="spinner-dash"></div>
+</div>
+
+<div class="toast-container-dash" id="dashToastContainer"></div>
+
+<div class="dash-modal-backdrop hidden" id="dashModalBackdrop">
+  <div class="dash-modal-box" id="dashModalBox">
+    <h5 id="dashModalTitle">Judul</h5>
+    <div id="dashModalBody"></div>
+    <div class="d-flex gap-2 justify-content-end mt-3" id="dashModalFooter"></div>
+  </div>
+</div>
+
+<script>
+  // ==================================================
+  // LOADING OVERLAY
+  // ==================================================
+  function dashShowLoading() {
+    document.getElementById('dashLoadingOverlay').classList.remove('hidden');
+  }
+  function dashHideLoading() {
+    document.getElementById('dashLoadingOverlay').classList.add('hidden');
+  }
+
+  // ==================================================
+  // TOAST NOTIFIKASI
+  // ==================================================
+  function dashToast(message, type) {
+    type = type || 'info';
+    var container = document.getElementById('dashToastContainer');
+    var el = document.createElement('div');
+    el.className = 'toast-dash ' + type;
+    el.textContent = message;
+    container.appendChild(el);
+    setTimeout(function () {
+      el.style.transition = 'opacity 0.3s';
+      el.style.opacity = '0';
+      setTimeout(function () { el.remove(); }, 300);
+    }, 3500);
+  }
+
+  // ==================================================
+  // MODAL GENERIK
+  // ==================================================
+  function dashOpenModal(title, bodyHtml, footerButtons, wide) {
+    document.getElementById('dashModalTitle').textContent = title;
+    document.getElementById('dashModalBody').innerHTML = bodyHtml;
+
+    var box = document.getElementById('dashModalBox');
+    if (wide) box.classList.add('wide'); else box.classList.remove('wide');
+
+    var footer = document.getElementById('dashModalFooter');
+    footer.innerHTML = '';
+    (footerButtons || []).forEach(function (btn) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = btn.className || 'btn btn-outline-secondary';
+      b.textContent = btn.label;
+      b.addEventListener('click', btn.onClick);
+      footer.appendChild(b);
+    });
+
+    document.getElementById('dashModalBackdrop').classList.remove('hidden');
+  }
+
+  function dashCloseModal() {
+    document.getElementById('dashModalBackdrop').classList.add('hidden');
+  }
+
+  document.getElementById('dashModalBackdrop').addEventListener('click', function (e) {
+    if (e.target === this) dashCloseModal();
+  });
+
+  // ==================================================
+  // WRAPPER google.script.run DENGAN LOADING + ERROR HANDLING SERAGAM
+  // ==================================================
+  function dashCall(functionName) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    return new Promise(function (resolve, reject) {
+      dashShowLoading();
+      google.script.run
+        .withSuccessHandler(function (res) {
+          dashHideLoading();
+          resolve(res);
+        })
+        .withFailureHandler(function (err) {
+          dashHideLoading();
+          dashToast('Gagal menghubungi server: ' + err.message, 'error');
+          reject(err);
+        })[functionName].apply(null, args);
+    });
+  }
+
+  // ==================================================
+  // HELPER BADGE STATUS (dipakai oleh Sekolah/Dinas/Capil JS)
+  // ==================================================
+  function dashBadgeClassForStatus(status) {
+    var map = {
+      "LENGKAP": "badge-lengkap",
+      "BELUM LENGKAP": "badge-belum-lengkap",
+      "BELUM MENGISI": "badge-belum-mengisi",
+      "SEDANG MENGISI": "badge-sedang-mengisi",
+      "SIAP SUBMIT": "badge-siap-submit",
+      "SUDAH SUBMIT": "badge-sudah-submit"
+    };
+    return map[status] || "badge-neutral";
+  }
+
+  function dashEscapeHtml(str) {
+    var div = document.createElement('div');
+    div.textContent = (str === null || str === undefined) ? "" : String(str);
+    return div.innerHTML;
+  }
+</script>

@@ -1,0 +1,266 @@
+<script>
+(function () {
+  "use strict";
+
+  var state = { npsn: null, lastData: null };
+
+  var el = {
+    loginWrapper: document.getElementById('loginWrapper'),
+    loginNpsn: document.getElementById('loginNpsn'),
+    loginError: document.getElementById('loginError'),
+    btnLogin: document.getElementById('btnLogin'),
+
+    dashboardMain: document.getElementById('dashboardMain'),
+    namaSekolahLabel: document.getElementById('namaSekolahLabel'),
+    infoSekolahLabel: document.getElementById('infoSekolahLabel'),
+    btnLogout: document.getElementById('btnLogout'),
+
+    lockedBanner: document.getElementById('lockedBanner'),
+    lockedBannerText: document.getElementById('lockedBannerText'),
+
+    statTotal: document.getElementById('statTotal'),
+    statSudahMengisi: document.getElementById('statSudahMengisi'),
+    statBelumMengisi: document.getElementById('statBelumMengisi'),
+    statLengkap: document.getElementById('statLengkap'),
+    statBelumLengkap: document.getElementById('statBelumLengkap'),
+    statStatusSekolah: document.getElementById('statStatusSekolah'),
+
+    filterKelasRombel: document.getElementById('filterKelasRombel'),
+    tabelSiswaBody: document.getElementById('tabelSiswaBody'),
+
+    panelKonfirmasi: document.getElementById('panelKonfirmasi'),
+    inputNamaPenandatangan: document.getElementById('inputNamaPenandatangan'),
+    checkSetuju: document.getElementById('checkSetuju'),
+    belumSiapSubmitMsg: document.getElementById('belumSiapSubmitMsg'),
+    btnKonfirmasiSubmit: document.getElementById('btnKonfirmasiSubmit')
+  };
+
+  // ==================================================
+  // LOGIN
+  // ==================================================
+  el.btnLogin.addEventListener('click', doLogin);
+  el.loginNpsn.addEventListener('keydown', function (e) { if (e.key === 'Enter') doLogin(); });
+
+  function doLogin() {
+    var npsn = el.loginNpsn.value.trim();
+    el.loginError.classList.add('hidden');
+
+    if (!/^\d{6,10}$/.test(npsn)) {
+      el.loginError.textContent = "Format NPSN tidak valid.";
+      el.loginError.classList.remove('hidden');
+      return;
+    }
+
+    dashCall('apiSekolahLogin', npsn).then(function (res) {
+      if (!res.success) {
+        el.loginError.textContent = res.message;
+        el.loginError.classList.remove('hidden');
+        return;
+      }
+      state.npsn = npsn;
+      el.loginWrapper.classList.add('hidden');
+      el.dashboardMain.classList.remove('hidden');
+      loadDashboard();
+    });
+  }
+
+  el.btnLogout.addEventListener('click', function () {
+    state.npsn = null;
+    el.dashboardMain.classList.add('hidden');
+    el.loginWrapper.classList.remove('hidden');
+    el.loginNpsn.value = "";
+  });
+
+  // ==================================================
+  // MUAT DASHBOARD
+  // ==================================================
+  el.filterKelasRombel.addEventListener('change', function () { loadDashboard(); });
+
+  function loadDashboard() {
+    var filter = el.filterKelasRombel.value || null;
+    dashCall('apiGetSekolahDashboard', state.npsn, filter).then(function (res) {
+      if (!res.success) {
+        dashToast(res.message, 'error');
+        return;
+      }
+      state.lastData = res;
+      renderDashboard(res);
+    });
+  }
+
+  function renderDashboard(res) {
+    el.namaSekolahLabel.textContent = res.sekolah.namaSekolah;
+    el.infoSekolahLabel.textContent = "NPSN " + res.sekolah.npsn + " \u2022 " + res.sekolah.bentukPendidikan + " \u2022 " + res.sekolah.kecamatan + ", " + res.sekolah.desa;
+
+    var r = res.ringkasan;
+    el.statTotal.textContent = r.totalSiswa;
+    el.statSudahMengisi.textContent = r.sudahMengisi;
+    el.statBelumMengisi.textContent = r.belumMengisi;
+    el.statLengkap.textContent = r.dataLengkap;
+    el.statBelumLengkap.textContent = r.dataBelumLengkap;
+    el.statStatusSekolah.textContent = r.statusSekolah;
+    el.statStatusSekolah.className = "badge-status " + dashBadgeClassForStatus(r.statusSekolah);
+
+    // Filter kelas/rombel (isi ulang opsi tanpa menghapus pilihan aktif jika masih ada)
+    var currentFilter = el.filterKelasRombel.value;
+    el.filterKelasRombel.innerHTML = '<option value="">Semua Kelas/Rombel</option>';
+    res.daftarKelasRombel.forEach(function (kr) {
+      var opt = document.createElement('option');
+      opt.value = kr; opt.textContent = kr;
+      if (kr === currentFilter) opt.selected = true;
+      el.filterKelasRombel.appendChild(opt);
+    });
+
+    renderTabel(res.siswa);
+
+    if (res.sudahSubmit) {
+      el.lockedBanner.classList.remove('hidden');
+      el.lockedBannerText.textContent = "Data sekolah ini sudah dikirim ke Dinas pada " +
+        formatTanggalSederhana(r.timestampSubmit) + " oleh " + (r.disubmitOleh || '-') + ". Data tidak dapat diubah lagi.";
+      el.panelKonfirmasi.classList.add('hidden');
+    } else {
+      el.lockedBanner.classList.add('hidden');
+      el.panelKonfirmasi.classList.remove('hidden');
+      el.btnKonfirmasiSubmit.disabled = !(res.siapSubmit && el.checkSetuju.checked);
+      el.belumSiapSubmitMsg.classList.toggle('hidden', res.siapSubmit);
+    }
+  }
+
+  function renderTabel(siswaList) {
+    if (siswaList.length === 0) {
+      el.tabelSiswaBody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">Belum ada data siswa.</td></tr>';
+      return;
+    }
+
+    el.tabelSiswaBody.innerHTML = siswaList.map(function (s, idx) {
+      return '<tr>' +
+        '<td>' + (idx + 1) + '</td>' +
+        '<td>' + dashEscapeHtml(s.namaAnak) + '</td>' +
+        '<td>' + dashEscapeHtml(s.nik) + '</td>' +
+        '<td>' + dashEscapeHtml(s.jenjang) + '</td>' +
+        '<td>' + dashEscapeHtml(s.kelasRombel) + '</td>' +
+        '<td><span class="badge-status ' + dashBadgeClassForStatus(s.statusSiswa) + '">' + s.statusSiswa + '</span></td>' +
+        '<td><span class="badge-status ' + dashBadgeClassForStatus(s.statusDokumen === 'LENGKAP' ? 'LENGKAP' : 'BELUM LENGKAP') + '">' + s.statusDokumen + '</span></td>' +
+        '<td>' + (s.adaDokumen
+          ? '<button class="btn-link-doc" data-id="' + dashEscapeHtml(s.idPengajuan) + '" data-nama="' + dashEscapeHtml(s.namaAnak) + '">Lihat Dokumen</button>'
+          : '<span class="text-muted form-text-small">Belum ada</span>') +
+        '</td>' +
+      '</tr>';
+    }).join('');
+
+    el.tabelSiswaBody.querySelectorAll('.btn-link-doc').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        openDokumenModal(btn.getAttribute('data-id'), btn.getAttribute('data-nama'));
+      });
+    });
+  }
+
+  el.checkSetuju.addEventListener('change', function () {
+    if (state.lastData) {
+      el.btnKonfirmasiSubmit.disabled = !(state.lastData.siapSubmit && el.checkSetuju.checked);
+    }
+  });
+
+  // ==================================================
+  // LIHAT DOKUMEN (modal daftar jenis dokumen -> preview)
+  // ==================================================
+  var DOC_TYPES = [
+    { key: 'foto', label: 'Foto Anak 3x4' },
+    { key: 'ttd', label: 'Tanda Tangan Pelapor' },
+    { key: 'formulir', label: 'Formulir KIA (PDF)' },
+    { key: 'akta', label: 'Akta Kelahiran (PDF)' },
+    { key: 'kk', label: 'Kartu Keluarga (PDF)' },
+    { key: 'ktp', label: 'KTP Orang Tua (PDF)' },
+    // RUNNING 3.2: pratinjau file gabungan yang akan dilihat Capil setelah submit
+    { key: 'gabungan', label: 'Berkas Gabungan (PDF) — pratinjau tampilan Capil' }
+  ];
+
+  function openDokumenModal(idPengajuan, namaAnak) {
+    var body = '<p class="form-text-small text-muted">Dokumen milik: <strong>' + dashEscapeHtml(namaAnak) + '</strong></p>' +
+      '<div class="d-flex flex-column gap-2">' +
+      DOC_TYPES.map(function (d) {
+        return '<button class="btn btn-outline-primary btn-sm text-start doc-type-btn" data-doc="' + d.key + '" data-idp="' + dashEscapeHtml(idPengajuan) + '">' + d.label + '</button>';
+      }).join('') +
+      '</div>' +
+      '<div id="docPreviewArea" class="mt-3"></div>';
+
+    dashOpenModal('Dokumen Siswa', body, [
+      { label: 'Tutup', className: 'btn btn-secondary', onClick: dashCloseModal }
+    ]);
+
+    document.querySelectorAll('.doc-type-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        loadDokumenPreview(btn.getAttribute('data-idp'), btn.getAttribute('data-doc'));
+      });
+    });
+  }
+
+  function loadDokumenPreview(idPengajuan, docType) {
+    var area = document.getElementById('docPreviewArea');
+    area.innerHTML = '<p class="text-muted form-text-small">Memuat dokumen...</p>';
+
+    dashCall('apiGetDokumenFile', 'sekolah', state.npsn, idPengajuan, docType).then(function (res) {
+      if (!res.success) {
+        area.innerHTML = '<div class="alert alert-danger">' + dashEscapeHtml(res.message) + '</div>';
+        return;
+      }
+      renderDocPreview(area, res);
+    });
+  }
+
+  function renderDocPreview(area, res) {
+    var dataUri = "data:" + res.mimeType + ";base64," + res.base64;
+    if (res.mimeType === 'application/pdf') {
+      area.innerHTML = '<iframe src="' + dataUri + '" style="width:100%;height:420px;"></iframe>' +
+        '<a class="btn btn-kia-primary btn-sm mt-2" download="' + dashEscapeHtml(res.fileName) + '" href="' + dataUri + '">Unduh PDF</a>';
+    } else {
+      area.innerHTML = '<img src="' + dataUri + '" style="max-height:340px;"><br>' +
+        '<a class="btn btn-kia-primary btn-sm mt-2" download="' + dashEscapeHtml(res.fileName) + '" href="' + dataUri + '">Unduh Gambar</a>';
+    }
+  }
+
+  // ==================================================
+  // KONFIRMASI & KIRIM DATA (submit final, dengan modal konfirmasi kedua)
+  // ==================================================
+  el.btnKonfirmasiSubmit.addEventListener('click', function () {
+    var nama = el.inputNamaPenandatangan.value.trim();
+
+    dashOpenModal(
+      'Konfirmasi Pengiriman Data',
+      '<p>Anda akan mengirim <strong>seluruh data siswa sekolah ini</strong> ke Dinas Kependudukan dan Pencatatan Sipil.</p>' +
+      '<p class="fw-bold" style="color:var(--dash-red);">Setelah dikirim, data TIDAK DAPAT diajukan ulang atau diubah.</p>' +
+      '<p class="form-text-small text-muted">Pastikan Anda benar-benar sudah memeriksa seluruh data dan dokumen.</p>',
+      [
+        { label: 'Batal', className: 'btn btn-secondary', onClick: dashCloseModal },
+        {
+          label: 'Ya, Kirim Sekarang',
+          className: 'btn btn-kia-primary',
+          onClick: function () {
+            dashCloseModal();
+            doSubmitSekolah(nama);
+          }
+        }
+      ]
+    );
+  });
+
+  function doSubmitSekolah(nama) {
+    dashCall('apiSekolahSubmit', state.npsn, el.checkSetuju.checked, nama).then(function (res) {
+      if (!res.success) {
+        dashToast(res.message, 'error');
+        return;
+      }
+      dashToast(res.message, 'success');
+      loadDashboard();
+    });
+  }
+
+  function formatTanggalSederhana(value) {
+    if (!value) return '-';
+    var d = new Date(value);
+    if (isNaN(d.getTime())) return String(value);
+    return d.toLocaleString('id-ID');
+  }
+
+})();
+</script>

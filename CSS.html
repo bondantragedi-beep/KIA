@@ -1,0 +1,507 @@
+<style>
+  :root {
+    --kia-blue: #0b3d91;
+    --kia-blue-dark: #082a66;
+    --kia-blue-light: #e8f0fe;
+    --kia-accent: #d97706;
+    --kia-gray: #64748b;
+    --kia-bg: #f5f7fa;
+    --kia-success: #15803d;
+    --kia-danger: #b91c1c;
+  }
+
+  body {
+    background-color: var(--kia-bg);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    color: #1e293b;
+  }
+
+  /* HEADER */
+  .app-header {
+    background: linear-gradient(135deg, var(--kia-blue), var(--kia-blue-dark));
+    color: #fff;
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+
+  .header-logo-wrapper { flex-shrink: 0; }
+
+  .header-logo-img {
+    height: 48px;
+    width: 48px;
+    object-fit: contain;
+    background: #fff;
+    border-radius: 8px;
+    padding: 4px;
+  }
+
+  .header-logo-fallback {
+    height: 48px;
+    width: 48px;
+    border-radius: 8px;
+    background: #fff;
+    color: var(--kia-blue);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+    text-align: center;
+    line-height: 1.1;
+  }
+  .header-logo-fallback span { letter-spacing: 0.03em; }
+
+  .app-header-text h1 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin: 0;
+  }
+
+  .app-header-text p {
+    font-size: 0.78rem;
+    margin: 0;
+    opacity: 0.85;
+  }
+
+  /* MAIN CONTAINER */
+  .app-main {
+    max-width: 720px;
+    margin: 24px auto;
+    padding: 0 16px 60px;
+  }
+
+  .step-card {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+    padding: 22px 20px;
+    margin-bottom: 18px;
+    border: 1px solid #e5e9f0;
+  }
+
+  .step-card h2 {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--kia-blue);
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .step-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--kia-blue-light);
+    color: var(--kia-blue);
+    font-size: 0.8rem;
+    font-weight: 700;
+  }
+
+  .form-label {
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: #334155;
+  }
+
+  .form-text-small { font-size: 0.78rem; }
+
+  .school-info-box {
+    background: var(--kia-blue-light);
+    border: 1px solid #cfe0fb;
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-top: 12px;
+  }
+
+  .school-info-box .label { font-size: 0.72rem; color: var(--kia-gray); text-transform: uppercase; letter-spacing: 0.03em; }
+  .school-info-box .value { font-weight: 600; color: #0f172a; margin-bottom: 8px; }
+
+  .alert-npsn-error {
+    font-size: 0.85rem;
+    margin-top: 8px;
+  }
+
+  .hidden { display: none !important; }
+
+  .btn-kia-primary {
+    background-color: var(--kia-blue);
+    border-color: var(--kia-blue);
+    font-weight: 600;
+  }
+  .btn-kia-primary:hover { background-color: var(--kia-blue-dark); border-color: var(--kia-blue-dark); }
+
+  .field-error {
+    color: var(--kia-danger);
+    font-size: 0.78rem;
+    margin-top: 4px;
+    display: none;
+  }
+
+  .is-invalid ~ .field-error,
+  .field-error.show { display: block; }
+
+  .status-pill {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+  }
+  .status-pill.lengkap { background: #dcfce7; color: var(--kia-success); }
+  .status-pill.belum { background: #fef3c7; color: #92400e; }
+
+  .success-box {
+    text-align: center;
+    padding: 30px 10px;
+  }
+  .success-box .icon-circle {
+    width: 72px; height: 72px;
+    border-radius: 50%;
+    background: #dcfce7;
+    color: var(--kia-success);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2rem;
+    margin: 0 auto 16px;
+  }
+
+  @media (max-width: 480px) {
+    .app-header-text h1 { font-size: 0.92rem; }
+    .app-header-text p { font-size: 0.7rem; }
+    .step-card { padding: 16px 14px; }
+  }
+
+  /* ============================================== */
+  /* RUNNING 2 — FOTO, TANDA TANGAN, DOKUMEN         */
+  /* ============================================== */
+
+  .upload-preview-img {
+    max-width: 160px;
+    max-height: 200px;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    object-fit: cover;
+  }
+
+  .signature-wrapper {
+    border: 2px dashed #cbd5e1;
+    border-radius: 10px;
+    background: #fff;
+    overflow: hidden;
+    touch-action: none;
+  }
+
+  #signatureCanvas {
+    width: 100%;
+    height: 220px;
+    display: block;
+    cursor: crosshair;
+    background:
+      repeating-linear-gradient(#fff, #fff 100%),
+      repeating-linear-gradient(0deg, #f8fafc, #f8fafc 1px, transparent 1px, transparent 100%);
+  }
+
+  .signature-preview-box {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: repeating-conic-gradient(#f1f5f9 0% 25%, #ffffff 0% 50%) 50% / 16px 16px;
+    min-height: 70px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+  }
+
+  .signature-preview-box img {
+    max-height: 70px;
+    max-width: 100%;
+  }
+
+  .gap-2 { gap: 8px; }
+
+  /* RUNNING 3.1 — Label jenjang otomatis (dari Bentuk Pendidikan sekolah) */
+  .jenjang-auto-box {
+    background: var(--kia-blue-light);
+    border: 1px solid #cfe0fb;
+    border-radius: 8px;
+    padding: 8px 12px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .jenjang-auto-box .badge-status { font-size: 0.8rem; padding: 4px 14px; }
+
+  /* ==================================================
+     RUNNING 3 — DASHBOARD (Sekolah / Dinas / Capil)
+     Palet: biru muda + putih (dasar), merah sebagai AKSEN saja.
+     ================================================== */
+  :root {
+    --dash-red: #c0202f;
+    --dash-red-light: #fde8ea;
+  }
+
+  .dash-body { background-color: #eef3fb; min-height: 100vh; }
+
+  .dash-main { max-width: 1180px; margin: 0 auto; padding: 20px 16px 60px; }
+
+  .role-tag {
+    display: inline-block;
+    background: rgba(255,255,255,0.18);
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 2px 10px;
+    border-radius: 999px;
+    margin-top: 2px;
+  }
+
+  /* LOGIN CARD */
+  .login-wrapper {
+    max-width: 420px;
+    margin: 60px auto;
+    padding: 0 16px;
+  }
+  .login-card {
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 4px 18px rgba(11,61,145,0.12);
+    padding: 32px 26px;
+    text-align: center;
+  }
+  .login-card h3 { color: var(--kia-blue); font-weight: 700; margin-bottom: 4px; }
+  .login-card p.subtitle { color: var(--kia-gray); font-size: 0.85rem; margin-bottom: 20px; }
+
+  /* STAT CARDS */
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 14px;
+    margin-bottom: 22px;
+  }
+  .stat-card {
+    background: #fff;
+    border-radius: 14px;
+    padding: 16px 18px;
+    box-shadow: 0 1px 4px rgba(15,23,42,0.07);
+    border-top: 3px solid var(--kia-blue);
+  }
+  .stat-card.accent-red { border-top-color: var(--dash-red); }
+  .stat-card .stat-label {
+    font-size: 0.72rem;
+    color: var(--kia-gray);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    margin-bottom: 6px;
+  }
+  .stat-card .stat-value {
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: #0f172a;
+    line-height: 1;
+  }
+  .stat-card .stat-value.text-red { color: var(--dash-red); }
+  .stat-card .stat-value.text-blue { color: var(--kia-blue); }
+
+  /* PANEL / SECTION */
+  .dash-panel {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 1px 4px rgba(15,23,42,0.07);
+    padding: 20px;
+    margin-bottom: 20px;
+    border: 1px solid #e5e9f0;
+  }
+  .dash-panel h5 {
+    color: var(--kia-blue);
+    font-weight: 700;
+    font-size: 0.95rem;
+    margin-bottom: 14px;
+  }
+
+  /* FILTER BAR */
+  .filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .filter-bar select, .filter-bar input {
+    font-size: 0.82rem;
+  }
+
+  /* TABLE */
+  .dash-table-wrapper { overflow-x: auto; }
+  .dash-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.83rem;
+    min-width: 640px;
+  }
+  .dash-table thead th {
+    background: var(--kia-blue);
+    color: #fff;
+    text-align: left;
+    padding: 10px 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .dash-table tbody td {
+    padding: 9px 12px;
+    border-bottom: 1px solid #eef1f6;
+    vertical-align: middle;
+  }
+  .dash-table tbody tr:hover { background: #f8fafc; }
+  .dash-table tbody tr:last-child td { border-bottom: none; }
+
+  /* BADGES */
+  .badge-status {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .badge-lengkap, .badge-sudah-submit { background: #dcfce7; color: #15803d; }
+  .badge-belum-lengkap, .badge-belum-mengisi { background: var(--dash-red-light); color: var(--dash-red); }
+  .badge-sedang-mengisi, .badge-siap-submit { background: #fef3c7; color: #92400e; }
+  .badge-neutral { background: #e2e8f0; color: #475569; }
+
+  .btn-link-doc, .btn-link-foto {
+    display: inline-block;
+    font-size: 0.74rem;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+    border: 1px solid transparent;
+  }
+  .btn-link-doc {
+    color: #fff;
+    background: var(--kia-blue);
+  }
+  .btn-link-doc:hover { background: var(--kia-blue-dark); }
+  .btn-link-foto {
+    color: var(--kia-blue);
+    background: #fff;
+    border-color: var(--kia-blue);
+  }
+  .btn-link-foto:hover { background: var(--kia-blue-light); }
+  .btn-link-doc:disabled, .btn-link-foto:disabled { opacity: 0.6; cursor: default; }
+
+  /* MODAL (generik, dipakai untuk konfirmasi & preview dokumen) */
+  .dash-modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(15,23,42,0.55);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 1050;
+    padding: 16px;
+  }
+  .dash-modal-backdrop.hidden { display: none; }
+  .dash-modal-box {
+    background: #fff;
+    border-radius: 14px;
+    max-width: 520px;
+    width: 100%;
+    max-height: 88vh;
+    overflow-y: auto;
+    padding: 22px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+  }
+  .dash-modal-box.wide { max-width: 760px; }
+  .dash-modal-box h5 { color: var(--kia-blue); font-weight: 700; margin-bottom: 12px; }
+  .dash-modal-box img, .dash-modal-box iframe {
+    max-width: 100%;
+    border-radius: 8px;
+    border: 1px solid #e5e9f0;
+  }
+
+  /* TOAST NOTIFIKASI */
+  .toast-container-dash {
+    position: fixed;
+    top: 16px; right: 16px;
+    z-index: 1100;
+    display: flex; flex-direction: column; gap: 8px;
+    max-width: 320px;
+  }
+  .toast-dash {
+    padding: 12px 16px;
+    border-radius: 10px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #fff;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.15);
+    animation: dashToastIn 0.2s ease-out;
+  }
+  .toast-dash.success { background: #15803d; }
+  .toast-dash.error { background: var(--dash-red); }
+  .toast-dash.info { background: var(--kia-blue); }
+  @keyframes dashToastIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* LOADING OVERLAY */
+  .loading-overlay-dash {
+    position: fixed; inset: 0;
+    background: rgba(255,255,255,0.7);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 1200;
+  }
+  .loading-overlay-dash.hidden { display: none; }
+  .spinner-dash {
+    width: 42px; height: 42px;
+    border: 4px solid #cfe0fb;
+    border-top-color: var(--kia-blue);
+    border-radius: 50%;
+    animation: dashSpin 0.7s linear infinite;
+  }
+  @keyframes dashSpin { to { transform: rotate(360deg); } }
+
+  /* CHECKBOX PERSETUJUAN SUBMIT */
+  .confirm-statement-box {
+    background: var(--dash-red-light);
+    border: 1px solid #f3c6ca;
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-size: 0.85rem;
+    color: #7a1420;
+    margin-bottom: 14px;
+  }
+
+  .locked-banner {
+    background: #dcfce7;
+    color: #15803d;
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .dash-login-link {
+    display: block;
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--kia-gray);
+    margin-top: 10px;
+  }
+  .dash-login-link a { color: var(--kia-blue); text-decoration: none; font-weight: 600; }
+  .dash-login-link a:hover { text-decoration: underline; }
+
+  @media (max-width: 560px) {
+    .stat-grid { grid-template-columns: repeat(2, 1fr); }
+    .dash-panel { padding: 14px; }
+  }
+</style>
