@@ -215,8 +215,10 @@ function generateFormulirKiaPdf(siswa, fotoBlob, ttdBlob, targetBaseName) {
   doc.saveAndClose();
   var docFile = DriveApp.getFileById(doc.getId());
   var pdfBlob = docFile.getAs("application/pdf").setName(targetBaseName + ".pdf");
-  docFile.setTrashed(true); // hanya PDF yang disimpan, Google Doc sementara dibuang
-
+  // RUNNING 4: docFile.setTrashed(true) dipindah ke pembersihan terjadwal
+  // (bersihkanDokumenSementara di Drive.gs) supaya proses upload tidak perlu
+  // menunggu 1 panggilan Drive API tambahan ini. Lihat catatan lengkap di
+  // Drive.gs pada fungsi convertImageBlobToPdf.
   return pdfBlob;
 }
 

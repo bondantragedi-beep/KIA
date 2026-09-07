@@ -72,7 +72,7 @@ function loadPdfLibIfNeeded_() {
 
   var code;
   try {
-    code = DriveApp.getFileById(PDFLIB_DRIVE_FILE_ID).getBlob().getDataAsString();
+    code = readPdfLibCodeCached_();
   } catch (eRead) {
     throw new Error(
       "Gagal membaca file pdf-lib dari Drive (File ID: " + PDFLIB_DRIVE_FILE_ID + "). " +
@@ -84,11 +84,72 @@ function loadPdfLibIfNeeded_() {
 
   if (typeof PDFLib === "undefined") {
     throw new Error(
-      "File berhasil dibaca dari Drive, tapi variabel global PDFLib tidak ditemukan setelah " +
+      "File berhasil dibaca, tapi variabel global PDFLib tidak ditemukan setelah " +
       "dijalankan. Kemungkinan file yang diupload bukan pdf-lib.min.js yang utuh (terpotong " +
       "saat diunduh/diupload, atau salah file). Coba unduh ulang filenya."
     );
   }
+}
+
+// ==================================================
+// RUNNING 4 — CACHE pdf-lib.min.js (PERFORMA)
+// ==================================================
+// SEBELUM: setiap kali mergePdfBlobsAsync_ dipanggil, seluruh isi file
+// pdf-lib.min.js (~ratusan KB) dibaca ULANG dari Drive lewat DriveApp, PADAHAL
+// tiap eksekusi Apps Script (tiap panggilan google.script.run) berjalan di
+// context baru -- jadi ini terjadi di SETIAP proses upload, dan menjadi salah
+// satu penyumbang terbesar lamanya waktu tunggu (baca file + eval string
+// sebesar itu bisa memakan 1-3 detik sendiri).
+//
+// SESUDAH: isi file disimpan ke CacheService (cache milik script, bertahan
+// s/d 6 jam) dalam beberapa potongan (tiap potongan wajib < 100 KB, batas
+// CacheService). Permintaan berikutnya cukup ambil dari cache yang jauh
+// lebih cepat dibanding baca file Drive, TANPA perlu mengubah/upload ulang
+// file pdf-lib.min.js yang sudah ada.
+var PDFLIB_CACHE_PREFIX = "pdflib_v1_chunk_";
+var PDFLIB_CACHE_CHUNK_SIZE = 90000; // aman di bawah batas 100 KB per key
+var PDFLIB_CACHE_TTL_SECONDS = 21600; // 6 jam = maksimum CacheService
+
+function readPdfLibCodeCached_() {
+  var cache = CacheService.getScriptCache();
+
+  try {
+    var meta = cache.get(PDFLIB_CACHE_PREFIX + "meta");
+    if (meta) {
+      var jumlahChunk = parseInt(meta, 10);
+      var potongan = [];
+      var lengkap = true;
+      for (var i = 0; i < jumlahChunk; i++) {
+        var c = cache.get(PDFLIB_CACHE_PREFIX + i);
+        if (c === null) { lengkap = false; break; }
+        potongan.push(c);
+      }
+      if (lengkap) return potongan.join("");
+    }
+  } catch (eCacheRead) {
+    Logger.log("Cache pdf-lib tidak terbaca (tidak fatal, lanjut ambil dari Drive): " + eCacheRead);
+  }
+
+  // Cache kosong/kadaluarsa -> ambil dari Drive (sekali), lalu simpan ke
+  // cache supaya permintaan-permintaan BERIKUTNYA (dalam 6 jam ke depan)
+  // tidak perlu membaca Drive lagi.
+  var code = DriveApp.getFileById(PDFLIB_DRIVE_FILE_ID).getBlob().getDataAsString();
+
+  try {
+    var jumlah = Math.ceil(code.length / PDFLIB_CACHE_CHUNK_SIZE);
+    var toPut = {};
+    for (var j = 0; j < jumlah; j++) {
+      toPut[PDFLIB_CACHE_PREFIX + j] = code.substr(j * PDFLIB_CACHE_CHUNK_SIZE, PDFLIB_CACHE_CHUNK_SIZE);
+    }
+    toPut[PDFLIB_CACHE_PREFIX + "meta"] = String(jumlah);
+    cache.putAll(toPut, PDFLIB_CACHE_TTL_SECONDS);
+  } catch (eCacheWrite) {
+    // Gagal menyimpan ke cache TIDAK BOLEH menggagalkan proses gabung PDF;
+    // kita sudah punya `code`-nya, tinggal lanjut pakai itu saja.
+    Logger.log("Gagal menyimpan pdf-lib ke cache (tidak fatal): " + eCacheWrite);
+  }
+
+  return code;
 }
 
 /**
@@ -162,6 +223,65 @@ async function mergePdfBlobsAsync_(pdfBlobs, outputFileName, debugLabel) {
 
   var mergedBytes = await mergedDoc.save();
   return Utilities.newBlob(Array.from(new Int8Array(mergedBytes)), "application/pdf", outputFileName);
+}
+
+/**
+ * RUNNING 4 — Menggabungkan berkas (Formulir+Akta+KK+KTP) untuk SATU ID
+ * Pengajuan, dipanggil DI LUAR proses upload utama (apiUploadBerkas), baik:
+ * 1. Sebagai panggilan LATAR (background) dari client segera setelah upload
+ *    inti sukses, TANPA membuat orang tua/sekolah menunggu (lihat
+ *    apiGabungkanBerkasLatar di Code.gs & JS.html) -- INI PERUBAHAN UTAMA
+ *    yang membuat proses "Kirim Berkas" terasa jauh lebih cepat, karena
+ *    penggabungan PDF (bagian paling berat: load pdf-lib + proses 4 file)
+ *    tidak lagi menghalangi respons ke pengguna.
+ * 2. Sebagai fallback "buat saat dibutuhkan" kalau Dashboard Capil membuka
+ *    dokumen gabungan yang keburu belum sempat dibuat proses latar di atas
+ *    (lihat apiGetDokumenViewUrl di DashboardBackend.gs).
+ *
+ * Aman dipanggil berkali-kali: kalau link gabungan SUDAH ada di sheet
+ * `dokumen`, fungsi ini langsung mengembalikannya tanpa memproses ulang.
+ *
+ * @return {String} URL file gabungan (Google Drive).
+ */
+async function gabungkanBerkasUntukPengajuan_(idPengajuan) {
+  var dok = getDokumenByIdPengajuan(idPengajuan);
+  if (!dok) {
+    throw new Error("Data dokumen untuk ID Pengajuan '" + idPengajuan + "' tidak ditemukan.");
+  }
+  if (dok.linkGabungan) {
+    return dok.linkGabungan; // sudah pernah dibuat, tidak perlu diproses ulang
+  }
+
+  var siswa = getSiswaById(idPengajuan);
+  if (!siswa) {
+    throw new Error("Data siswa untuk ID Pengajuan '" + idPengajuan + "' tidak ditemukan.");
+  }
+
+  function ambilBlob(url, label) {
+    var id = extractDriveFileId(url);
+    if (!id) throw new Error("Link " + label + " kosong/tidak valid, berkas gabungan tidak dapat dibuat.");
+    return DriveApp.getFileById(id).getBlob();
+  }
+
+  var formulirBlob = ambilBlob(dok.linkFormulir, "Formulir KIA");
+  var aktaBlob = ambilBlob(dok.linkAkta, "Akta");
+  var kkBlob = ambilBlob(dok.linkKK, "KK");
+  var ktpBlob = ambilBlob(dok.linkKTP, "KTP");
+
+  var baseName = siswa.nik + "_" + sanitizeName(siswa.namaAnak);
+  var mergedBlob = await mergePdfBlobsAsync_(
+    [formulirBlob, aktaBlob, kkBlob, ktpBlob],
+    baseName + "_BerkasLengkap.pdf",
+    idPengajuan
+  );
+
+  var folder = getStudentFolder(siswa.kecamatan, siswa.namaSekolah, siswa.kelasRombel, siswa.namaAnak);
+  var mergedFile = folder.createFile(mergedBlob);
+  ensureLinkViewableForCapil(mergedFile);
+
+  var url = mergedFile.getUrl();
+  updateLinkGabunganDokumen(idPengajuan, url);
+  return url;
 }
 
 // ==================================================

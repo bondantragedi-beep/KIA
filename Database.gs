@@ -392,6 +392,27 @@ function getDokumenByIdPengajuan(idPengajuan) {
   return null;
 }
 
+/**
+ * RUNNING 4 — Menulis HANYA kolom "Link Berkas Gabungan" (kolom ke-13) untuk
+ * satu ID Pengajuan, dipakai oleh gabungkanBerkasUntukPengajuan_() (lihat
+ * PdfMerge.gs) setelah proses gabung-PDF selesai di LATAR BELAKANG (bukan
+ * lagi bagian dari upsertDokumen() yang dipanggil saat upload utama).
+ */
+function updateLinkGabunganDokumen(idPengajuan, url) {
+  var sheet = getSheet(SHEET_DOKUMEN);
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+
+  var target = String(idPengajuan).trim();
+  var ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  for (var i = 0; i < ids.length; i++) {
+    if (String(ids[i][0]).trim() === target) {
+      sheet.getRange(i + 2, 13).setValue(url);
+      return;
+    }
+  }
+}
+
 // ==================================================
 // STATUS SEKOLAH (sheet `status_sekolah`)
 // ==================================================
@@ -433,9 +454,11 @@ function updateStatusSekolah(npsn, namaSekolah) {
     if (existingStatus !== "SUDAH SUBMIT") {
       sheet.getRange(rowIndex, 3).setValue("SEDANG MENGISI");
     }
-    sheet.getRange(rowIndex, 4).setValue(counts.total);
-    sheet.getRange(rowIndex, 5).setValue(counts.lengkap);
-    sheet.getRange(rowIndex, 6).setValue(now);
+    // RUNNING 4: 3 kolom berdekatan (4,5,6) ditulis dalam SATU panggilan
+    // setValues() alih-alih 3 panggilan setValue() terpisah -- tiap
+    // panggilan ke Google Sheets adalah 1 kali round-trip jaringan, jadi
+    // menggabungkannya langsung memangkas waktu tunggu.
+    sheet.getRange(rowIndex, 4, 1, 3).setValues([[counts.total, counts.lengkap, now]]);
   }
 }
 
@@ -513,9 +536,10 @@ function updateStatusSekolahSubmit(npsn, submittedBy) {
 
   var now = new Date();
   sheet.getRange(status._rowIndex, 3).setValue("SUDAH SUBMIT"); // kolom Status
-  sheet.getRange(status._rowIndex, 6).setValue(now);            // Last Update
-  sheet.getRange(status._rowIndex, 7).setValue(now);            // Timestamp Submit
-  sheet.getRange(status._rowIndex, 8).setValue(submittedBy || "Tidak diketahui"); // Disubmit Oleh
+  // RUNNING 4: kolom 6-8 (Last Update, Timestamp Submit, Disubmit Oleh)
+  // berdekatan -> ditulis sekaligus lewat 1 setValues() (lihat catatan yang
+  // sama di updateStatusSekolah di atas).
+  sheet.getRange(status._rowIndex, 6, 1, 3).setValues([[now, now, submittedBy || "Tidak diketahui"]]);
 }
 
 /**

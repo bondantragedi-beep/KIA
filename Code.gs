@@ -336,30 +336,19 @@ async function apiUploadBerkas(payload) {
     var formulirFile = folder.createFile(formulirBlob);
     ensurePrivate(formulirFile);
 
-    // ---------- RUNNING 3.4: GABUNGKAN 4 PDF JADI 1 FILE UNTUK DASHBOARD CAPIL ----------
-    // Urutan sesuai permintaan: Formulir KIA -> Akta -> KK -> KTP.
-    // Orientasi & ukuran asli tiap halaman TIDAK diubah (lihat PdfMerge.gs).
+    // ---------- RUNNING 4: PENGGABUNGAN 4 PDF DIPINDAH KE LATAR BELAKANG ----------
+    // SEBELUM: penggabungan Formulir+Akta+KK+KTP (proses PALING BERAT di
+    // seluruh alur upload -- load pdf-lib + proses 4 file PDF) dilakukan DI
+    // SINI, membuat orang tua/sekolah menunggu proses ini selesai sebelum
+    // melihat "Berhasil". Ini penyumbang TERBESAR dari lamanya waktu unggah.
+    // SESUDAH: field `linkGabungan` dikosongkan dulu; client (JS.html)
+    // memanggil apiGabungkanBerkasLatar() SEGERA SETELAH respons ini
+    // diterima, TANPA menunggu hasilnya (lihat JS.html). Kalau panggilan
+    // latar itu gagal/lambat, Dashboard Capil tetap otomatis membuatnya
+    // saat pertama kali dokumen gabungan dibuka (lihat apiGetDokumenViewUrl
+    // di DashboardBackend.gs) -- jadi hasil akhirnya SAMA, hanya prosesnya
+    // tidak lagi menghalangi respons ke pengguna.
     var linkGabungan = "";
-    try {
-      var mergedBlob = await mergePdfBlobsAsync_(
-        [formulirBlob, aktaFile.getBlob(), kkFile.getBlob(), ktpFile.getBlob()],
-        baseName + "_BerkasLengkap.pdf",
-        siswa.idPengajuan
-      );
-      var mergedFile = folder.createFile(mergedBlob);
-      // RUNNING 3.6: file gabungan diset "siapa saja yang punya link boleh
-      // lihat" (BUKAN private) -- lihat penjelasan lengkap & trade-off
-      // keamanannya di komentar fungsi ensureLinkViewableForCapil (Drive.gs).
-      ensureLinkViewableForCapil(mergedFile);
-      linkGabungan = mergedFile.getUrl();
-    } catch (mergeErr) {
-      // JANGAN gagalkan seluruh proses upload hanya karena penggabungan PDF
-      // gagal (mis. PDFLIB_DRIVE_FILE_ID belum diisi/salah). 4 dokumen
-      // terpisah tetap tersimpan seperti biasa; hanya file gabungan yang
-      // kosong. Detail LENGKAP dicatat ke log agar mudah didiagnosis.
-      var detailError = (mergeErr && mergeErr.stack) ? String(mergeErr.stack) : String(mergeErr);
-      writeLog("ERROR_GABUNG_PDF", siswa.npsn, nik, siswa.idPengajuan, detailError);
-    }
 
     // ---------- CATAT KE SHEET `dokumen` ----------
     upsertDokumen({
@@ -400,5 +389,28 @@ async function apiUploadBerkas(payload) {
   } catch (err) {
     writeLog("ERROR_UPLOAD_BERKAS", "", "", payload ? payload.idPengajuan : "", String(err));
     return { success: false, errors: ["Terjadi kesalahan sistem: " + err.message] };
+  }
+}
+
+/**
+ * RUNNING 4 — Endpoint LATAR (background), dipanggil client SEGERA setelah
+ * apiUploadBerkas() sukses, TANPA ditunggu (lihat JS.html: dipanggil setelah
+ * showFinalSuccess, bukan sebelum). Tugasnya HANYA menggabungkan Formulir+
+ * Akta+KK+KTP jadi 1 file PDF untuk Dashboard Capil (lihat penjelasan
+ * lengkap di gabungkanBerkasUntukPengajuan_, PdfMerge.gs).
+ *
+ * Kalau gagal (mis. PDFLIB_DRIVE_FILE_ID belum diisi/salah, atau timeout),
+ * TIDAK APA-APA -- 4 dokumen terpisah tetap tersimpan seperti biasa, dan
+ * Dashboard Capil otomatis mencoba lagi ("buat saat dibutuhkan") ketika
+ * dokumen gabungan pertama kali dibuka.
+ */
+async function apiGabungkanBerkasLatar(idPengajuan) {
+  try {
+    var url = await gabungkanBerkasUntukPengajuan_(idPengajuan);
+    return { success: true, url: url };
+  } catch (err) {
+    var detailError = (err && err.stack) ? String(err.stack) : String(err);
+    writeLog("ERROR_GABUNG_PDF_LATAR", "", "", idPengajuan, detailError);
+    return { success: false };
   }
 }

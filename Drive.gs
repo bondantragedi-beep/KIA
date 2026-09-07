@@ -131,9 +131,42 @@ function convertImageBlobToPdf(imageBlob, targetBaseName) {
 
   var docFile = DriveApp.getFileById(doc.getId());
   var pdfBlob = docFile.getAs("application/pdf").setName(targetBaseName + ".pdf");
-  docFile.setTrashed(true); // hapus Google Doc sementara, hanya PDF yang disimpan
-
+  // RUNNING 4: docFile.setTrashed(true) SENGAJA TIDAK dipanggil di sini lagi.
+  // Membuangnya di sini berarti 1 panggilan Drive API SINKRON tambahan yang
+  // harus ditunggu setiap kali ada gambar dikonversi ke PDF (bisa sampai 3x
+  // dalam satu proses upload: Akta/KK/KTP) -- ikut memperlambat waktu
+  // tunggu pengguna. File Google Docs sementara ini ("..._temp") sekarang
+  // dibuang belakangan lewat trigger terjadwal bersihkanDokumenSementara()
+  // di bawah, sehingga tidak lagi menghalangi respons ke pengguna.
   return pdfBlob;
+}
+
+/**
+ * RUNNING 4 — Membuang seluruh file Google Docs sementara ("...???_temp",
+ * dipakai sebagai "mesin render" konversi gambar->PDF & pembuatan Formulir
+ * KIA di convertImageBlobToPdf & generateFormulirKiaPdf) yang tertinggal.
+ * TIDAK dipanggil saat upload berlangsung -- jalankan lewat trigger
+ * terjadwal saja supaya tidak memperlambat pengguna.
+ *
+ * CARA PASANG (SEKALI SAJA): Apps Script Editor -> ikon jam "Triggers" di
+ * sisi kiri -> Add Trigger -> Function: "bersihkanDokumenSementara",
+ * Event source: "Time-driven", Type: "Hour timer" (mis. tiap 1 jam).
+ */
+function bersihkanDokumenSementara() {
+  var it = DriveApp.searchFiles(
+    "title contains '_temp' and mimeType = '" + MimeType.GOOGLE_DOCS + "' and trashed = false"
+  );
+  var jumlah = 0;
+  while (it.hasNext()) {
+    var f = it.next();
+    try {
+      f.setTrashed(true);
+      jumlah++;
+    } catch (e) {
+      Logger.log("bersihkanDokumenSementara: gagal membuang 1 file, dilewati: " + e);
+    }
+  }
+  Logger.log("bersihkanDokumenSementara: " + jumlah + " file Google Docs sementara dibuang.");
 }
 
 /**

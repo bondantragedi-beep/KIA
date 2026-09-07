@@ -455,10 +455,17 @@
       return;
     }
 
-    readFileAsBase64(file).then(function (base64) {
-      fotoData = { base64: base64, mimeType: file.type, filename: file.name };
-      el.previewFoto.src = "data:" + file.type + ";base64," + base64;
-      el.previewFoto.classList.remove('hidden');
+    // RUNNING 4: gambar dikecilkan dulu di browser (maks 1200px sisi
+    // terpanjang) SEBELUM diubah jadi base64 & dikirim ke server. Foto dari
+    // kamera HP seringkali beresolusi jauh lebih besar dari yang dibutuhkan
+    // untuk Formulir KIA, jadi ini memangkas ukuran data yang dikirim lewat
+    // google.script.run tanpa mengubah tampilan foto secara kasat mata.
+    compressImageFile(file, 1200, 0.8).then(function (fileUntukUpload) {
+      return readFileAsBase64(fileUntukUpload).then(function (base64) {
+        fotoData = { base64: base64, mimeType: fileUntukUpload.type, filename: fileUntukUpload.name };
+        el.previewFoto.src = "data:" + fileUntukUpload.type + ";base64," + base64;
+        el.previewFoto.classList.remove('hidden');
+      });
     });
   });
 
@@ -611,8 +618,16 @@
         return;
       }
 
-      readFileAsBase64(file).then(function (base64) {
-        dokumenData[key] = { base64: base64, mimeType: file.type, filename: file.name };
+      // RUNNING 4: sama seperti foto anak -- kalau berkasnya berupa gambar
+      // (JPG/PNG hasil foto/scan Akta/KK/KTP), dikecilkan dulu di browser
+      // sebelum dikirim (PDF asli TIDAK disentuh/dikompresi, langsung
+      // dipakai apa adanya). Ini juga mengurangi ukuran gambar yang harus
+      // diproses server saat dikonversi ke PDF (lihat convertImageBlobToPdf
+      // di Drive.gs), jadi konversinya pun lebih ringan & cepat.
+      compressImageFile(file, 1600, 0.75).then(function (fileUntukUpload) {
+        return readFileAsBase64(fileUntukUpload).then(function (base64) {
+          dokumenData[key] = { base64: base64, mimeType: fileUntukUpload.type, filename: fileUntukUpload.name };
+        });
       });
     });
   }
@@ -669,6 +684,15 @@
           return;
         }
         showFinalSuccess(res);
+
+        // RUNNING 4: proses gabung-PDF (Formulir+Akta+KK+KTP, khusus untuk
+        // tampilan Dashboard Capil) dipicu DI SINI, SETELAH pengguna sudah
+        // melihat "Berhasil" & bisa mengunduh Formulir KIA-nya -- BUKAN
+        // ditunggu dulu sebelum tombol berhenti loading. Sengaja TIDAK diberi
+        // withFailureHandler/withSuccessHandler yang menyentuh tampilan:
+        // kalau gagal, Dashboard Capil otomatis mencoba membuatnya lagi saat
+        // dokumen gabungan pertama kali dibuka (lihat DashboardBackend.gs).
+        google.script.run.apiGabungkanBerkasLatar(res.idPengajuan);
       })
       .withFailureHandler(function (err) {
         setLoading(el.btnSubmitBerkas, false, "Kirim Berkas & Buat Formulir KIA");
@@ -707,6 +731,60 @@
   function getExt(filename) {
     var parts = String(filename || "").split(".");
     return parts.length > 1 ? parts.pop().toLowerCase() : "";
+  }
+
+  /**
+   * RUNNING 4 — Mengecilkan sebuah File gambar (JPG/PNG) lewat <canvas>
+   * SEBELUM dikirim ke server: sisi terpanjang dibatasi `maxDim` piksel,
+   * lalu dipadatkan ulang jadi JPEG kualitas `quality`. Bukan gambar (mis.
+   * PDF) atau apa pun yang gagal diproses -> dikembalikan APA ADANYA (file
+   * asli), supaya upload tetap jalan meski kompresi gagal di browser lama.
+   * Kalau ternyata hasil kompresi malah tidak lebih kecil dari aslinya
+   * (jarang, biasanya untuk foto yang memang sudah kecil), file asli yang
+   * dipakai juga.
+   */
+  function compressImageFile(file, maxDim, quality) {
+    return new Promise(function (resolve) {
+      if (!file || !/^image\/(jpeg|jpg|png)$/i.test(file.type)) {
+        resolve(file);
+        return;
+      }
+
+      var objectUrl = URL.createObjectURL(file);
+      var img = new Image();
+
+      img.onload = function () {
+        URL.revokeObjectURL(objectUrl);
+
+        var w = img.naturalWidth || img.width;
+        var h = img.naturalHeight || img.height;
+        if (!w || !h) { resolve(file); return; }
+
+        var scale = Math.min(1, maxDim / Math.max(w, h));
+        var canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(w * scale));
+        canvas.height = Math.max(1, Math.round(h * scale));
+
+        var ctx2d = canvas.getContext('2d');
+        ctx2d.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        canvas.toBlob(function (blob) {
+          if (!blob || blob.size >= file.size) {
+            resolve(file); // kompresi tidak membantu -> pakai file asli
+            return;
+          }
+          var namaBaru = file.name.replace(/\.(png|jpe?g)$/i, '') + '.jpg';
+          resolve(new File([blob], namaBaru, { type: 'image/jpeg' }));
+        }, 'image/jpeg', quality);
+      };
+
+      img.onerror = function () {
+        URL.revokeObjectURL(objectUrl);
+        resolve(file); // gagal dimuat sbg gambar -> pakai file asli, jangan sampai upload gagal total
+      };
+
+      img.src = objectUrl;
+    });
   }
 
   function readFileAsBase64(file) {

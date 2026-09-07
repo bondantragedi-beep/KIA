@@ -420,9 +420,14 @@ function resolveDokumenAccess_(role, credential, idPengajuan, docType) {
   var url = linkMap[docType];
   if (!url) {
     var pesan = (docType === "gabungan")
-      ? "File PDF gabungan (Formulir+Akta+KK+KTP) belum tersedia untuk pengajuan ini — kemungkinan diunggah sebelum fitur ini aktif, atau proses penggabungan sempat gagal. Minta orang tua/sekolah mengunggah ulang berkas melalui form, atau hubungi admin aplikasi."
+      ? "File PDF gabungan (Formulir+Akta+KK+KTP) belum tersedia untuk pengajuan ini — kemungkinan proses penggabungan latar belakang belum selesai atau sempat gagal."
       : "Jenis dokumen tidak dikenali.";
-    return { authorized: false, message: pesan };
+    // RUNNING 4: docType "gabungan" ditandai secara eksplisit (bukan lewat
+    // tebak-tebakan isi pesan) supaya pemanggil ASYNC (apiGetDokumenViewUrl)
+    // bisa mencoba MEMBUAT file gabungan ini SEKARANG JUGA sebagai fallback,
+    // karena sejak RUNNING 4 penggabungan tidak lagi dijamin selesai saat
+    // upload berlangsung (lihat gabungkanBerkasUntukPengajuan_ di PdfMerge.gs).
+    return { authorized: false, message: pesan, missingGabungan: docType === "gabungan" };
   }
 
   var fileId = extractDriveFileId(url);
@@ -458,9 +463,27 @@ function resolveDokumenBlob_(role, credential, idPengajuan, docType) {
  * memindahkan tab browser ke domain lain (percobaan redirect sebelumnya
  * gagal karena ini, bukan karena otorisasi/ukuran file).
  */
-function apiGetDokumenViewUrl(role, credential, idPengajuan, docType) {
+async function apiGetDokumenViewUrl(role, credential, idPengajuan, docType) {
   try {
     var akses = resolveDokumenAccess_(role, credential, idPengajuan, docType);
+
+    // RUNNING 4: fallback "buat saat dibutuhkan" -- kalau file gabungan
+    // ternyata belum ada (mis. panggilan latar apiGabungkanBerkasLatar
+    // sempat gagal/lambat), coba buat SEKARANG di sini, saat memang
+    // dibutuhkan, sebelum menyerah dengan pesan error ke Capil.
+    if (!akses.authorized && akses.missingGabungan) {
+      try {
+        var urlBaru = await gabungkanBerkasUntukPengajuan_(idPengajuan);
+        if (urlBaru) {
+          var idBaru = extractDriveFileId(urlBaru);
+          return { success: true, url: "https://drive.google.com/file/d/" + idBaru + "/view" };
+        }
+      } catch (eLazy) {
+        writeLog("ERROR_GABUNG_PDF_LAZY", "", "", idPengajuan, String(eLazy && eLazy.stack || eLazy));
+        // lanjut ke bawah, kembalikan pesan error biasa
+      }
+    }
+
     if (!akses.authorized) {
       return { success: false, message: akses.message };
     }
