@@ -111,7 +111,9 @@
     errKK: document.getElementById('errKK'),
     errKTP: document.getElementById('errKTP'),
     btnSubmitBerkas: document.getElementById('btnSubmitBerkas'),
-    berkasError: document.getElementById('berkasError')
+    berkasError: document.getElementById('berkasError'),
+    overlayUploadBerkas: document.getElementById('overlayUploadBerkas'),
+    overlayUploadBerkasSub: document.getElementById('overlayUploadBerkasSub')
   };
 
   // State tambahan RUNNING 2
@@ -674,11 +676,11 @@
       ktp: dokumenData.ktp
     };
 
-    setLoading(el.btnSubmitBerkas, true, "Mengunggah & membuat formulir...");
+    setLoadingBerkas(true);
 
     google.script.run
       .withSuccessHandler(function (res) {
-        setLoading(el.btnSubmitBerkas, false, "Kirim Berkas & Buat Formulir KIA");
+        setLoadingBerkas(false);
         if (!res.success) {
           showError(el.berkasError, (res.errors || ["Gagal mengunggah berkas."]).join(" "));
           return;
@@ -695,7 +697,7 @@
         google.script.run.apiGabungkanBerkasLatar(res.idPengajuan);
       })
       .withFailureHandler(function (err) {
-        setLoading(el.btnSubmitBerkas, false, "Kirim Berkas & Buat Formulir KIA");
+        setLoadingBerkas(false);
         showError(el.berkasError, "Gagal menghubungi server: " + err.message);
       })
       .apiUploadBerkas(payload);
@@ -829,7 +831,61 @@
   }
   function setLoading(button, isLoading, label) {
     button.disabled = isLoading;
-    button.textContent = label;
+    var icon = button.dataset.icon; // ikon Bootstrap Icons opsional (presentasi saja), mis. "bi-search"
+    if (isLoading) {
+      button.innerHTML = '<span class="btn-inline-spinner"></span>' + label;
+    } else {
+      button.innerHTML = icon ? ('<i class="bi ' + icon + '"></i> ' + label) : label;
+    }
+  }
+
+  // ==================================================
+  // RUNNING 5 — ANIMASI LOADING SAAT "KIRIM BERKAS"
+  // ==================================================
+  // Selain tombol yang menunjukkan status loading (spinner kecil + teks
+  // nonaktif), sebuah overlay layar penuh ditampilkan supaya jelas terlihat
+  // bahwa sistem SEDANG BEKERJA (bukan macet) selama proses simpan berkas +
+  // buat Formulir KIA berlangsung. Pesan di overlay berganti-ganti mengikuti
+  // tahapan proses SEBENARNYA di server (lihat urutan di apiUploadBerkas,
+  // Code.gs) supaya terasa informatif, bukan sekadar animasi kosong.
+  var TAHAPAN_UPLOAD_BERKAS = [
+    "Menyimpan foto & tanda tangan...",
+    "Menyimpan Akta, KK, dan KTP...",
+    "Membuat Formulir KIA (PDF)...",
+    "Hampir selesai..."
+  ];
+  var timerTahapanUploadBerkas = null;
+
+  function setLoadingBerkas(isLoading) {
+    setLoading(
+      el.btnSubmitBerkas,
+      isLoading,
+      isLoading ? "Mengunggah & membuat formulir..." : "Kirim Berkas & Buat Formulir KIA"
+    );
+
+    if (isLoading) {
+      var langkahKe = 0;
+      el.overlayUploadBerkasSub.textContent = TAHAPAN_UPLOAD_BERKAS[0];
+      el.overlayUploadBerkas.classList.remove('hidden');
+
+      // Pesan berganti tiap 1.8 detik selama proses berjalan. Kalau proses
+      // sungguhan lebih cepat/lambat dari perkiraan ini, tidak masalah --
+      // ini murni indikator visual, bukan pelacak progres yang presisi.
+      timerTahapanUploadBerkas = setInterval(function () {
+        langkahKe = Math.min(langkahKe + 1, TAHAPAN_UPLOAD_BERKAS.length - 1);
+        el.overlayUploadBerkasSub.style.opacity = 0;
+        setTimeout(function () {
+          el.overlayUploadBerkasSub.textContent = TAHAPAN_UPLOAD_BERKAS[langkahKe];
+          el.overlayUploadBerkasSub.style.opacity = 1;
+        }, 200);
+      }, 1800);
+    } else {
+      if (timerTahapanUploadBerkas) {
+        clearInterval(timerTahapanUploadBerkas);
+        timerTahapanUploadBerkas = null;
+      }
+      el.overlayUploadBerkas.classList.add('hidden');
+    }
   }
 
 })();

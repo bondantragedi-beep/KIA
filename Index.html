@@ -3,6 +3,10 @@
 <head>
   <base target="_top">
   <meta charset="UTF-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <?!= include('CSS'); ?>
 </head>
@@ -25,7 +29,7 @@
       <label class="form-label" for="inputNpsn">Masukkan NPSN Sekolah</label>
       <div class="input-group">
         <input type="text" class="form-control" id="inputNpsn" placeholder="Contoh: 40311xxx" maxlength="10" inputmode="numeric">
-        <button class="btn btn-kia-primary" id="btnCariNpsn" type="button">Cari</button>
+        <button class="btn btn-kia-primary" id="btnCariNpsn" type="button" data-icon="bi-search"><i class="bi bi-search"></i> Cari</button>
       </div>
       <div id="npsnError" class="alert alert-danger alert-npsn-error hidden"></div>
 
@@ -176,7 +180,7 @@
         </div>
 
         <div class="d-grid mt-4">
-          <button type="submit" class="btn btn-kia-primary btn-lg" id="btnSimpan">Simpan Data Siswa</button>
+          <button type="submit" class="btn btn-kia-primary btn-lg" id="btnSimpan" data-icon="bi-save2"><i class="bi bi-save2"></i> Simpan Data Siswa</button>
         </div>
         <div id="simpanError" class="alert alert-danger mt-3 hidden"></div>
       </form>
@@ -185,7 +189,7 @@
     <!-- STEP 3b: KONFIRMASI DATA TERSIMPAN -> LANJUT BERKAS -->
     <section class="step-card hidden" id="cardDataTersimpan">
       <div class="success-box">
-        <div class="icon-circle">&#10003;</div>
+        <div class="icon-circle"><i class="bi bi-check-lg"></i></div>
         <h4>Data Siswa Tersimpan</h4>
         <p class="text-muted mb-1">ID Pengajuan: <strong id="dataTersimpanId">-</strong></p>
         <p class="form-text-small text-muted">Silakan lanjutkan dengan mengunggah foto, tanda tangan, dan dokumen pendukung di bawah ini.</p>
@@ -214,8 +218,8 @@
       <div class="field-error" id="errTtd">Tanda tangan wajib diisi.</div>
 
       <div class="d-flex gap-2 mt-2">
-        <button type="button" class="btn btn-outline-secondary btn-sm" id="btnUndoTtd">Ulangi (Undo Goresan)</button>
-        <button type="button" class="btn btn-outline-danger btn-sm" id="btnClearTtd">Hapus</button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="btnUndoTtd"><i class="bi bi-arrow-counterclockwise"></i> Ulangi (Undo Goresan)</button>
+        <button type="button" class="btn btn-outline-danger btn-sm" id="btnClearTtd"><i class="bi bi-x-lg"></i> Hapus</button>
       </div>
 
       <div class="mt-3">
@@ -251,7 +255,7 @@
       </div>
 
       <div class="d-grid mt-4">
-        <button type="button" class="btn btn-kia-primary btn-lg" id="btnSubmitBerkas">Kirim Berkas &amp; Buat Formulir KIA</button>
+        <button type="button" class="btn btn-kia-primary btn-lg" id="btnSubmitBerkas" data-icon="bi-cloud-upload"><i class="bi bi-cloud-upload"></i> Kirim Berkas &amp; Buat Formulir KIA</button>
       </div>
       <div id="berkasError" class="alert alert-danger mt-3 hidden"></div>
     </section>
@@ -259,13 +263,13 @@
     <!-- STEP 7: SUKSES -->
     <section class="step-card hidden" id="cardSukses">
       <div class="success-box">
-        <div class="icon-circle">&#10003;</div>
+        <div class="icon-circle"><i class="bi bi-check-lg"></i></div>
         <h4>Pengajuan KIA Berhasil Dikirim</h4>
         <p class="text-muted mb-1">ID Pengajuan: <strong id="hasilIdPengajuan">-</strong></p>
         <p>Status Kelengkapan: <span class="status-pill" id="hasilStatus">-</span></p>
-        <button class="btn btn-kia-primary mt-3" id="btnUnduhFormulir" type="button">Unduh Formulir KIA (PDF)</button>
+        <button class="btn btn-kia-primary mt-3" id="btnUnduhFormulir" type="button"><i class="bi bi-file-earmark-arrow-down"></i> Unduh Formulir KIA (PDF)</button>
         <br>
-        <button class="btn btn-outline-primary mt-3" id="btnTambahLagi" type="button">Isi Data Siswa Lain</button>
+        <button class="btn btn-outline-primary mt-3" id="btnTambahLagi" type="button"><i class="bi bi-plus-lg"></i> Isi Data Siswa Lain</button>
       </div>
     </section>
 
@@ -276,6 +280,16 @@
     <a href="?page=dinas">Dinas</a> &middot;
     <a href="?page=capil">Capil</a>
   </p>
+
+  <!-- RUNNING 5: OVERLAY ANIMASI LOADING SAAT KIRIM BERKAS -->
+  <div class="loading-overlay-berkas hidden" id="overlayUploadBerkas">
+    <div class="loading-overlay-berkas-box">
+      <div class="spinner-dash spinner-dash-lg"></div>
+      <p class="loading-overlay-berkas-title">Mengunggah &amp; membuat formulir...</p>
+      <p class="loading-overlay-berkas-sub" id="overlayUploadBerkasSub">Menyimpan berkas ke Drive...</p>
+      <p class="loading-overlay-berkas-note">Mohon tidak menutup atau memuat ulang halaman ini.</p>
+    </div>
+  </div>
 
   <?!= include('JS'); ?>
 </body>

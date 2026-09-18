@@ -142,7 +142,7 @@
         '<td><span class="badge-status ' + dashBadgeClassForStatus(s.statusSiswa) + '">' + s.statusSiswa + '</span></td>' +
         '<td><span class="badge-status ' + dashBadgeClassForStatus(s.statusDokumen === 'LENGKAP' ? 'LENGKAP' : 'BELUM LENGKAP') + '">' + s.statusDokumen + '</span></td>' +
         '<td>' + (s.adaDokumen
-          ? '<button class="btn-link-doc" data-id="' + dashEscapeHtml(s.idPengajuan) + '" data-nama="' + dashEscapeHtml(s.namaAnak) + '">Lihat Dokumen</button>'
+          ? '<button class="btn-link-doc" data-id="' + dashEscapeHtml(s.idPengajuan) + '" data-nama="' + dashEscapeHtml(s.namaAnak) + '"><i class="bi bi-folder2-open"></i> Lihat Dokumen</button>'
           : '<span class="text-muted form-text-small">Belum ada</span>') +
         '</td>' +
       '</tr>';
